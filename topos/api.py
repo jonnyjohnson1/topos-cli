@@ -91,7 +91,7 @@ async def chat(websocket: WebSocket):
     simp_msg_history.append({'role': 'USER', 'content': message})
     try:
         text = []
-        for chunk in stream_chat(message_history, model = model, temperature=temperature):
+        for chunk in stream_chat(simp_msg_history, model = model, temperature=temperature):
             text.append(chunk)
             story_summary = {'response':''.join(text), 'completed': False}
             await websocket.send_json({"status": "generating", **story_summary})
@@ -103,9 +103,6 @@ async def chat(websocket: WebSocket):
         return
 
     await websocket.close()
-
-
-
 
 
 
