@@ -29,7 +29,7 @@ class SemanticCompression:
             return "ollama", model
 
     def get_content_key(self, key, token_limit_for_task):
-        content_key = f"{key}.{self.model}.{token_limit_for_task}"
+        content_key = f"{key}.{self.model_provider}.{self.model_type}.{token_limit_for_task}"
         return content_key
 
     def fetch_semantic_category(self, input_text, modifiers_limit=3):

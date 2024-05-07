@@ -24,7 +24,7 @@ except KeyError:
     openai_api_key = None
     print("\033[93mWARNING:\033[0m OPENAI_API_KEY environment variable is not set.")
 
-semantic_compression = SemanticCompression(api_key=openai_api_key)
+semantic_compression = None
 
 # get the current working directory
 project_dir = "/Users/dialogues/developer/topos/cli"
@@ -79,6 +79,8 @@ async def chat(websocket: WebSocket):
     
     model = payload["model"] if "model" in payload else "solar"
     temperature = 0.04 # default temperature
+
+    semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=openai_api_key)
     
     if "temperature" in payload:
         if payload["temperature"] != None:
@@ -101,21 +103,21 @@ async def chat(websocket: WebSocket):
 
     # Second step, generate the shortened story given the prompt
     simp_msg_history.append({'role': 'USER', 'content': message})
-    try:
-        text = []
-        for chunk in stream_chat(simp_msg_history, model = model, temperature=temperature):
-            text.append(chunk)
-            story_summary = {'response':''.join(text), 'completed': False}
-            await websocket.send_json({"status": "generating", **story_summary})
+    # try:
+    text = []
+    for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
+        text.append(chunk)
+        story_summary = {'response':''.join(text), 'completed': False}
+        await websocket.send_json({"status": "generating", **story_summary})
 
-        output_combined = ''.join(text)
-        semantic_category = semantic_compression.fetch_semantic_category(output_combined)
-        # story_summary = {'response':''.join(text), 'completed': True}  # llm function
-        await websocket.send_json({"status": "completed", "output": output_combined, "semantic_category": semantic_category})
-    except Exception as e:
-        await websocket.send_json({"status": "error", "message": "Generation failed"})
-        await websocket.close()
-        return
+    output_combined = ''.join(text)
+    semantic_category = semantic_compression.fetch_semantic_category(output_combined)
+    # story_summary = {'response':''.join(text), 'completed': True}  # llm function
+    await websocket.send_json({"status": "completed", "output": output_combined, "semantic_category": semantic_category})
+    # except Exception as e:
+    #     await websocket.send_json({"status": "error", "message": "Generation failed"})
+    #     await websocket.close()
+    #     return
 
     await websocket.close()
 
