@@ -1,3 +1,5 @@
+# api.py
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -6,13 +8,23 @@ import uvicorn
 import json
 import os
 
-
 from topos.summaries.summaries import stream_chat
+from topos.FC.semantic_compression import SemanticCompression
 
 import ssl
 import requests
 
+load_dotenv()
+
 app = FastAPI()
+
+try:
+    openai_api_key = os.environ["OPENAI_API_KEY"]
+except KeyError:
+    openai_api_key = None
+    print("\033[93mWARNING:\033[0m OPENAI_API_KEY environment variable is not set.")
+
+semantic_compression = SemanticCompression(api_key=openai_api_key)
 
 # get the current working directory
 project_dir = "/Users/dialogues/developer/topos/cli"
@@ -35,7 +47,7 @@ async def list_models():
         if result.status_code == 200:
             return {"result": result.json()}
         else:
-            print(f"Ping failed. Status code: {response.status_code}")
+            print(f"Ping failed. Status code: {result.status_code}")
             return None
     except requests.ConnectionError:
         print("Ping failed. Connection refused. Check if the server is running.")
@@ -91,12 +103,15 @@ async def chat(websocket: WebSocket):
     simp_msg_history.append({'role': 'USER', 'content': message})
     try:
         text = []
-        for chunk in stream_chat(message_history, model = model, temperature=temperature):
+        for chunk in stream_chat(message_history, model=model, temperature=temperature):
             text.append(chunk)
             story_summary = {'response':''.join(text), 'completed': False}
             await websocket.send_json({"status": "generating", **story_summary})
-        story_summary = {'response':''.join(text), 'completed': True}  # llm function
-        await websocket.send_json({"status": "completed", **story_summary})
+
+        output_combined = ''.join(text)
+        semantic_category = semantic_compression.fetch_semantic_category(output_combined)
+        # story_summary = {'response':''.join(text), 'completed': True}  # llm function
+        await websocket.send_json({"status": "completed", "output": output_combined, "semantic_category": semantic_category})
     except Exception as e:
         await websocket.send_json({"status": "error", "message": "Generation failed"})
         await websocket.close()
