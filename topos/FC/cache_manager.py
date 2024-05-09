@@ -9,7 +9,7 @@ import logging
 from dotenv import load_dotenv
 
 class CacheManager:
-    def __init__(self, cache_dir="../_cache"):
+    def __init__(self, cache_dir="./_cache"):
         self.cache_dir = cache_dir
         os.makedirs(self.cache_dir, exist_ok=True)  # Ensure the cache directory exists
 
