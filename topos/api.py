@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 import json
@@ -26,6 +26,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+import tkinter as tk
+from tkinter import filedialog
+
+def read_file_as_bytes(file_path):
+    try:
+        with open(file_path, 'rb') as file:
+            file_bytes = list(file.read())
+        return file_bytes
+    except FileNotFoundError:
+        print("File not found.")
+        return None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+@app.post("/get_files")
+async def get_files():
+    root = tk.Tk()
+    root.withdraw()
+    filetypes = [("PNG files", "*.png"), ("JPG files", "*.jpg"), ("JPEG files", "*.jpeg")]
+    file_path = filedialog.askopenfilename(title="Select an image file",
+                                       filetypes=(filetypes))
+    print(file_path)
+    
+    # Use the os.path module
+    system_path = os.path.abspath("/")
+    print(system_path)
+    bytes_list = read_file_as_bytes(file_path)
+    media_type="application/json",
+    
+    # data = json.dumps(, ensure_ascii=False)
+    # print(data[:110])
+    return {"file_name" : [i for i in file_path], "bytes": bytes_list}
 
 @app.post("/list_models")
 async def list_models():
@@ -66,6 +101,7 @@ async def chat(websocket: WebSocket):
     """
     
     model = payload["model"] if "model" in payload else "solar"
+
     temperature = 0.04 # default temperature
     
     if "temperature" in payload:
@@ -79,16 +115,15 @@ async def chat(websocket: WebSocket):
     print(f"TEMP: {temperature}")
     # First step, set the prompt for the short summarizer
     # insert entries information as system prompt
-    simp_msg_history = []
-    # for msg in message_history:
-    #     if "entries" in message_history:
-    
+    simp_msg_history = [{'role': 'system', 'content': "You are an AI assistant being helpful, speaking to someone who is trying to get along"}]
 
     # convert message history into basic message history
-    simp_msg_history = [{'role': i['role'], 'content': i['content']} for i in message_history]
+    for i in message_history:
+        if "images" in i:
+            simp_msg_history.append({'role': i['role'], 'content': i['content'], 'images': i['images']})
+        else:
+            simp_msg_history.append({'role': i['role'], 'content': i['content']})
 
-    # Second step, generate the shortened story given the prompt
-    simp_msg_history.append({'role': 'USER', 'content': message})
     try:
         text = []
         for chunk in stream_chat(simp_msg_history, model = model, temperature=temperature):
@@ -119,9 +154,6 @@ There is the local option to connect the local apps to the Topos API (Grow debug
 
 
 """
-
-
-
 
 
 
