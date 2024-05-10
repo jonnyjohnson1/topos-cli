@@ -116,7 +116,7 @@ async def chat(websocket: WebSocket):
     print(f"\t\t[ found semantic category {semantic_category}]")
 
     # story_summary = {'response':''.join(text), 'completed': True}  # llm function
-    await websocket.send_json({"status": "completed", "response": output_combined, "semantic_category": semantic_category)})
+    await websocket.send_json({"status": "completed", "response": output_combined, "semantic_category": semantic_category})
     # except Exception as e:
     #     await websocket.send_json({"status": "error", "message": "Generation failed"})
     #     await websocket.close()
