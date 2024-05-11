@@ -1,7 +1,7 @@
 #cli.py
 
 import argparse
-from . import api
+from .api import api
 
 def main():
     parser = argparse.ArgumentParser(description="CLI for my script")

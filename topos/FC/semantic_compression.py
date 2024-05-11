@@ -1,3 +1,5 @@
+# semantic_compression.py
+
 import json
 import logging
 import math
