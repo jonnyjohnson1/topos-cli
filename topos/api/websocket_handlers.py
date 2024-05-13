@@ -1,5 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from ..services.message_processing import SemanticCompression, stream_chat
+from ..generations.ollama_chat import stream_chat
+from topos.FC.semantic_compression import SemanticCompression
 from ..config import get_openai_api_key
 import json
 
@@ -17,10 +18,31 @@ async def chat(websocket: WebSocket):
             message_history = payload["message_history"]
             model = payload.get("model", "solar")
             temperature = float(payload.get("temperature", 0.04))
+            current_topic = payload.get("topic", "Unknown")
+
+            # Set system prompt
+            has_topic = False
+            
+            if current_topic != "Unknown":
+                has_topic = True
+                prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
+
+            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style:"
+            user_prompt = ""
+            if message_history:
+                # Add the message history prior to the message
+                user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
+
+            print(f"\t[ system prompt :: {system_prompt} ]")
+            print(f"\t[ user prompt :: {user_prompt} ]")
+            simp_msg_history = [{'role': 'system', 'content': system_prompt}]
 
             # Simplify message history to required format
-            simp_msg_history = [{'role': i['role'], 'content': i['content']} for i in message_history]
-            simp_msg_history.append({'role': 'USER', 'content': message})
+            for message in message_history:
+                simplified_message = {'role': message['role'], 'content': message['content']}
+                if 'images' in message:
+                    simplified_message['images'] = message['images']
+                simp_msg_history.append(simplified_message)
 
             # Processing the chat
             output_combined = ""
@@ -34,7 +56,7 @@ async def chat(websocket: WebSocket):
 
             # Send the final completed message
             await websocket.send_json(
-                {"status": "completed", "response": output_combined, "semantic_category": semantic_category})
+                {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True})
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
@@ -54,10 +76,31 @@ async def debate(websocket: WebSocket):
             message_history = payload["message_history"]
             model = payload.get("model", "solar")
             temperature = float(payload.get("temperature", 0.04))
+            current_topic = payload.get("topic", "Unknown")
+
+            # Set system prompt
+            has_topic = False
+            
+            if current_topic != "Unknown":
+                has_topic = True
+                prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
+
+            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style:"
+            user_prompt = ""
+            if message_history:
+                # Add the message history prior to the message
+                user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
+
+            print(f"\t[ system prompt :: {system_prompt} ]")
+            print(f"\t[ user prompt :: {user_prompt} ]")
+            simp_msg_history = [{'role': 'system', 'content': system_prompt}]
 
             # Simplify message history to required format
-            simp_msg_history = [{'role': i['role'], 'content': i['content']} for i in message_history]
-            simp_msg_history.append({'role': 'USER', 'content': message})
+            for message in message_history:
+                simplified_message = {'role': message['role'], 'content': message['content']}
+                if 'images' in message:
+                    simplified_message['images'] = message['images']
+                simp_msg_history.append(simplified_message)
 
             # Processing the chat
             output_combined = ""
@@ -71,7 +114,7 @@ async def debate(websocket: WebSocket):
 
             # Send the final completed message
             await websocket.send_json(
-                {"status": "completed", "response": output_combined, "semantic_category": semantic_category})
+                {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True})
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
