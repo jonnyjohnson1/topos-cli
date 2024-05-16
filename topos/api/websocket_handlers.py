@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from ..generations.ollama_chat import stream_chat
 from topos.FC.semantic_compression import SemanticCompression
 from ..config import get_openai_api_key
+from ..models.llm_classes import vision_models
 import json
 
 router = APIRouter()
@@ -38,11 +39,17 @@ async def chat(websocket: WebSocket):
             simp_msg_history = [{'role': 'system', 'content': system_prompt}]
 
             # Simplify message history to required format
+            # If user uses a vision model, load images, else don't
+            isVisionModel = model in vision_models
+            print(f"\t[ using model :: {model} :: 🕶️  isVision ]") if isVisionModel else print(f"\t[ using model :: {model} ]")  
+            
             for message in message_history:
                 simplified_message = {'role': message['role'], 'content': message['content']}
-                if 'images' in message:
+                if 'images' in message and isVisionModel:
                     simplified_message['images'] = message['images']
                 simp_msg_history.append(simplified_message)
+            
+            # Check 
 
             # Processing the chat
             output_combined = ""
