@@ -5,8 +5,7 @@ from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
 import json
 
-from ..services.basic_analytics.token_classifiers import get_ner
-
+from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
 router = APIRouter()
 
 @router.websocket("/websocket_chat")
@@ -50,12 +49,17 @@ async def chat(websocket: WebSocket):
                     simplified_message['images'] = message['images']
                 simp_msg_history.append(simplified_message)
             
-            # spacy- Testing the token classifier
+            # Fetch base, per-message token classifiers
             last_message = simp_msg_history[-1]['content']
             print("Last message: " + last_message)
-            entity_dict = get_ner(last_message)
-            print(entity_dict)
-            
+            entity_dict = base_token_classifier(last_message)
+            if len(entity_dict) > 0:
+                print("ENTS (ner) :: ", entity_dict)
+
+            # Fetch base, per-message text classifiers
+            text_classifiers = base_text_classifier(last_message)
+            print("Text Classifiers :: ", entity_dict)
+
             # Processing the chat
             output_combined = ""
             for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
@@ -65,6 +69,17 @@ async def chat(websocket: WebSocket):
             # Fetch semantic category from the output
             semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
             semantic_category = semantic_compression.fetch_semantic_category(output_combined)
+
+            # Fetch base, per-message token classifiers
+            last_message = simp_msg_history[-1]['content']
+            print("system msg :: " + output_combined)
+            entity_dict = base_token_classifier(output_combined)
+            if len(entity_dict) > 0:
+                print("ENTS (ner) :: ", entity_dict)
+
+            # Fetch base, per-message text classifiers
+            text_classifiers = base_text_classifier(output_combined)
+            print("Text Classifiers :: ", text_classifiers)
 
             # Send the final completed message
             await websocket.send_json(
