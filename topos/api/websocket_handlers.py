@@ -5,8 +5,9 @@ from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
 import json
 
-router = APIRouter()
+from ..services.basic_analytics.token_classifiers import get_ner
 
+router = APIRouter()
 
 @router.websocket("/websocket_chat")
 async def chat(websocket: WebSocket):
@@ -49,8 +50,12 @@ async def chat(websocket: WebSocket):
                     simplified_message['images'] = message['images']
                 simp_msg_history.append(simplified_message)
             
-            # Check 
-
+            # spacy- Testing the token classifier
+            last_message = simp_msg_history[-1]['content']
+            print("Last message: " + last_message)
+            entity_dict = get_ner(last_message)
+            print(entity_dict)
+            
             # Processing the chat
             output_combined = ""
             for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
