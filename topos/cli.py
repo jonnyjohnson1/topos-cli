@@ -4,7 +4,7 @@ import argparse
 
 def main():
     parser = argparse.ArgumentParser(description="CLI for my script")
-    parser.add_argument('command', choices=['run', 'dl'], help="Command to execute")
+    parser.add_argument('command', choices=['run', 'set'], help="Command to execute")
     parser.add_argument('--web', action='store_true', help="Flag to run the server for web access")
     parser.add_argument('--local', action='store_true', help="Flag to run the server for local access (default)")
     parser.add_argument('--spacy', choices=['small', 'med', 'large', 'trf'], help="Specify Spacy model size (only for 'download' command)")
@@ -22,7 +22,7 @@ def main():
         else:
             api.start_local_api()
     
-    elif args.command == 'dl':
+    elif args.command == 'set':
         """
         download Spacy model
         """

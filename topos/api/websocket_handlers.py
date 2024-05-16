@@ -58,7 +58,7 @@ async def chat(websocket: WebSocket):
 
             # Fetch base, per-message text classifiers
             text_classifiers = base_text_classifier(last_message)
-            print("Text Classifiers :: ", entity_dict)
+            print("Classifiers :: ", text_classifiers)
 
             # Processing the chat
             output_combined = ""

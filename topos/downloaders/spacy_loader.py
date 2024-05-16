@@ -1,4 +1,5 @@
 import subprocess
+import yaml
 
 def download_spacy_model(model_selection):
     if model_selection == 'small':
@@ -13,10 +14,10 @@ def download_spacy_model(model_selection):
         model_name = "en_core_web_sm"
     try:
         subprocess.run(['python', '-m', 'spacy', 'download', model_name], check=True)
+        # Write updated settings to YAML file
+        with open('config.yaml', 'w') as file:
+            yaml.dump({'active_spacy_model': model_name}, file)
         print(f"Successfully downloaded '{model_name}' spaCy model.")
+        print(f"'{model_name}' set as active model.")
     except subprocess.CalledProcessError as e:
         print(f"Error downloading '{model_name}' spaCy model: {e}")
-
-if __name__ == "__main__":
-    model_name = "en_core_web_sm"  # Change this to the desired spaCy model
-    download_spacy_model(model_name)
