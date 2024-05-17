@@ -15,7 +15,7 @@ def main():
         """
         start the topos api server
         """
-        # imoprt api
+        # import api
         from .api import api
         if args.web:
             api.start_web_api()
@@ -26,7 +26,7 @@ def main():
         """
         download Spacy model
         """
-        # imoprt downloaders
+        # import downloaders
         from .downloaders.spacy_loader import download_spacy_model
         if args.spacy:
             download_spacy_model(args.spacy)

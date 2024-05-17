@@ -8,6 +8,9 @@ import json
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
 router = APIRouter()
 
+# cache database
+from topos.FC.conversation_cache_manager import ConversationCacheManager
+
 @router.websocket("/websocket_chat")
 async def chat(websocket: WebSocket):
     await websocket.accept()
@@ -15,6 +18,8 @@ async def chat(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
+            print(payload)
+            conversation_id = payload["conversation_id"]
             message = payload["message"]
             message_history = payload["message_history"]
             model = payload.get("model", "solar")
@@ -59,6 +64,15 @@ async def chat(websocket: WebSocket):
             # Fetch base, per-message text classifiers
             text_classifiers = base_text_classifier(last_message)
             print("Classifiers :: ", text_classifiers)
+
+            # TODO Add chat to database
+            conv_cache_manager = ConversationCacheManager()
+            print(f"\t[ save to conv cache :: conversation_id: {conversation_id} ]")
+            # TODO Properly save this data as dict of messageIds, and each one has a timestamp, so we know the order
+            dummy_data = {'message': last_message, 'text_class':  text_classifiers, 'token_class': entity_dict}
+            conv_cache_manager.save_to_cache(conversation_id, dummy_data)
+            # TODO Send back to UI
+            # await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
 
             # Processing the chat
             output_combined = ""

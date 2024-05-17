@@ -3,11 +3,17 @@ from ..basic_analytics.text_classifiers import get_text_moderation_levels, get_t
 
 
 def base_token_classifier(last_message):
-    # spacy- token classifications
+    """
+    set of token classification options
+    """
+    # spacy-       token classifications
     entity_dict = get_ner(last_message)
     return entity_dict
 
 def base_text_classifier(last_message):
+    """
+    set of token classification options
+    """
     # transformers- text classifications
     mod_level = get_text_moderation_levels(last_message)
     tern_sent = get_text_sentiment_ternary(last_message)
