@@ -1,4 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from datetime import datetime
+import time
+
 from ..generations.ollama_chat import stream_chat
 from topos.FC.semantic_compression import SemanticCompression
 from ..config import get_openai_api_key
@@ -11,6 +14,7 @@ router = APIRouter()
 # cache database
 from topos.FC.conversation_cache_manager import ConversationCacheManager
 
+
 @router.websocket("/websocket_chat")
 async def chat(websocket: WebSocket):
     await websocket.accept()
@@ -18,8 +22,9 @@ async def chat(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
-            print(payload)
             conversation_id = payload["conversation_id"]
+            message_id = payload["message_id"]
+            chatbot_msg_id = payload["chatbot_msg_id"]
             message = payload["message"]
             message_history = payload["message_history"]
             model = payload.get("model", "solar")
@@ -56,23 +61,42 @@ async def chat(websocket: WebSocket):
             
             # Fetch base, per-message token classifiers
             last_message = simp_msg_history[-1]['content']
-            print("Last message: " + last_message)
-            entity_dict = base_token_classifier(last_message)
-            if len(entity_dict) > 0:
-                print("ENTS (ner) :: ", entity_dict)
+            start_time = time.time()
+            base_analysis = base_token_classifier(last_message)  # this is only an ner dict atm
+            duration = time.time() - start_time
+            print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
+            
+            # if len(base_analysis) > 0:
+            #     print("ENTS (ner) :: ", base_analysis)
 
             # Fetch base, per-message text classifiers
+            # Start timer for base_text_classifier
+            start_time = time.time()
             text_classifiers = base_text_classifier(last_message)
-            print("Classifiers :: ", text_classifiers)
+            duration = time.time() - start_time
+            print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
 
-            # TODO Add chat to database
+            # print("Classifiers :: ", text_classifiers)
+
             conv_cache_manager = ConversationCacheManager()
-            print(f"\t[ save to conv cache :: conversation_id: {conversation_id} ]")
-            # TODO Properly save this data as dict of messageIds, and each one has a timestamp, so we know the order
-            dummy_data = {'message': last_message, 'text_class':  text_classifiers, 'token_class': entity_dict}
+            print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
+            dummy_data = {message_id : {
+                'message': last_message, 
+                'timestamp': datetime.now(), 
+                'in_line': {
+                    'base_analysis': base_analysis
+                },
+                'commenter': {
+                    'base_analysis': text_classifiers
+                }}}
+
             conv_cache_manager.save_to_cache(conversation_id, dummy_data)
-            # TODO Send back to UI
-            # await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
+            # Removing the keys from the nested dictionary
+            if message_id in dummy_data:
+                dummy_data[message_id].pop('message', None)
+                dummy_data[message_id].pop('timestamp', None)
+            # Sending first batch of user message analysis back to the UI
+            await websocket.send_json({"status": "fetched_user_analysis", 'user_message': dummy_data})
 
             # Processing the chat
             output_combined = ""
@@ -84,20 +108,44 @@ async def chat(websocket: WebSocket):
             semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
             semantic_category = semantic_compression.fetch_semantic_category(output_combined)
 
-            # Fetch base, per-message token classifiers
-            last_message = simp_msg_history[-1]['content']
-            print("system msg :: " + output_combined)
-            entity_dict = base_token_classifier(output_combined)
-            if len(entity_dict) > 0:
-                print("ENTS (ner) :: ", entity_dict)
+            # Start timer for base_token_classifier
+            start_time = time.time()
+            base_analysis = base_token_classifier(output_combined)
+            duration = time.time() - start_time
+            print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
 
-            # Fetch base, per-message text classifiers
+            # if len(base_analysis) > 0:
+            #     print("ENTS (ner) :: ", base_analysis)
+
+            # Start timer for base_text_classifier
+            start_time = time.time()
             text_classifiers = base_text_classifier(output_combined)
-            print("Text Classifiers :: ", text_classifiers)
+            duration = time.time() - start_time
+            print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
+
+            conv_cache_manager = ConversationCacheManager()
+            print(f"\t[ save to conv cache :: conversation {conversation_id}-{chatbot_msg_id} ]")
+            dummy_bot_data = {
+                chatbot_msg_id : {
+                'message': output_combined, 
+                'timestamp': datetime.now(), 
+                'in_line': {
+                    'base_analysis': base_analysis
+                },
+                'commenter': {
+                    'base_analysis': text_classifiers
+                }}}
+                
+            conv_cache_manager.save_to_cache(conversation_id, dummy_bot_data)
+
+            # Removing the keys from the nested dictionary
+            if chatbot_msg_id in dummy_bot_data:
+                dummy_bot_data[chatbot_msg_id].pop('message', None)
+                dummy_bot_data[chatbot_msg_id].pop('timestamp', None)
 
             # Send the final completed message
             await websocket.send_json(
-                {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True})
+                {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True, 'user_message': dummy_data, 'bot_data': dummy_bot_data})
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
