@@ -28,13 +28,26 @@ def get_text_moderation_levels(text):
     return added_names
 
 def get_text_sentiment_ternary(text):
-    pipe = pipeline("text-classification", model="finiteautomata/bertweet-base-sentiment-analysis", truncation=True, max_length=128)
-    return pipe(text)
+    try:
+        pipe = pipeline("text-classification", model="finiteautomata/bertweet-base-sentiment-analysis", truncation=True, max_length=128)
+        return pipe(text)
+    except Exception as e:
+        logging.error(f"Failed to get_text_sentiment_ternary: {e}")
+        return None
+    
 
 def get_text_sentiment_6(text):
-    pipe = pipeline("text-classification", model="bhadresh-savani/bert-base-uncased-emotion", truncation=True, max_length=128)
-    return pipe(text)
+    try:
+        pipe = pipeline("text-classification", model="bhadresh-savani/bert-base-uncased-emotion", truncation=True, max_length=128)
+        return pipe(text)
+    except Exception as e:
+        logging.error(f"Failed to get_text_sentiment_6: {e}")
+        return None
 
 def get_text_sentiment_27(text):
-    pipe = pipeline("text-classification", model="SamLowe/roberta-base-go_emotions", truncation=True, max_length=128)
-    return pipe(text)
+    try:
+        pipe = pipeline("text-classification", model="SamLowe/roberta-base-go_emotions", truncation=True, max_length=128)
+        return pipe(text)
+    except Exception as e:
+        logging.error(f"Failed to get_text_sentiment_27: {e}")
+        return None

@@ -72,7 +72,11 @@ async def chat(websocket: WebSocket):
             # Fetch base, per-message text classifiers
             # Start timer for base_text_classifier
             start_time = time.time()
-            text_classifiers = base_text_classifier(last_message)
+            text_classifiers = {}
+            try:
+                text_classifiers = base_text_classifier(last_message)
+            except Exception as e:
+                logging.error(f"Failed to compute base_text_classifier: {cache_path}: {e}")
             duration = time.time() - start_time
             print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
 
