@@ -90,15 +90,15 @@ async def debate(websocket: WebSocket):
             system_prompt = f""
             
             if current_topic == "unknown topic":
-                system_prompt = (f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style, in the format of:\n"
-                                 f"{{\"role\":\"moderator\", \"content\":\"I think the topic might be...(_insert name of what you think the topic might be based on the ongoing discussion here!_)\", \"certainty_score\": \"(_insert certainty score 1-10 here!_)\"}}")
+                system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style, in the format of:\n
+                                {{\"role\":\"moderator\", \"content\":\"I think the topic might be...(_insert name of what you think the topic might be based on the ongoing discussion here!_)\", \"certainty_score\": \"(_insert certainty score 1-10 here!_)\"}}"""
             else:
                 has_topic = True
-                system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
-                system_prompt += (f"You keep track of who is speaking, in the context of saying out loud every round:\n"
-                                  f"{{\"role\":\"moderator\", \"content\":\"The topic is...(_insert name of topic here!_)\"}}")
+                system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n
+                                You keep track of who is speaking, in the context of saying out loud every round:\n
+                                {{\"role\":\"moderator\", \"content\":\"The topic is...(_insert name of topic here!_)\", "affirmative_negative score": "(_insert affirmative or negative score, -10 to +10, here!_)"}}"""
 
-            user_prompt = ""
+            user_prompt = f""
             if message_history:
                 # Add the message history prior to the message
                 user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
