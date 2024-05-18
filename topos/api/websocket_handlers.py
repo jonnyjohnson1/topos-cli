@@ -87,12 +87,18 @@ async def debate(websocket: WebSocket):
 
             # Set system prompt
             has_topic = False
+            system_prompt = f""
             
             if current_topic != "Unknown":
                 has_topic = True
-                prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
+                system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
+            else:
+                system_prompt = (f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style, in the format of:\n"
+                                 f"{{role:'moderator', content:'I think the topic might be...({{_insert name of what you think the topic might be based on the ongoing discussion here!_}}, with a certainty score of out 10: {{_insert certainty score here!_}})'}}")
 
-            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style:"
+            system_prompt += (f"You keep track of who is speaking, in the context of saying out loud every round:\n"
+                              f"{{role:'moderator', content:'The topic is...({{_insert name of topic here!_}})'}}")
+
             user_prompt = ""
             if message_history:
                 # Add the message history prior to the message
