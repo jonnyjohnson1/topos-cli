@@ -13,8 +13,13 @@ httpx = "^0.27.0"
 fastapi = "0.109.2"
 langchain = "0.1.4"
 uvicorn = "0.20.0"
-websockets = "11.0.3"
+websockets = "11.0"
 ollama = "0.1.9"
+transformers = "^4.41.0"
+spacy = "^3.7.4"
+nltk = "^3.8.1"
+neo4j = "^5.20.0"
+torch = "^2.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
@@ -30,4 +35,3 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 topos = "topos.cli:main"
-    
