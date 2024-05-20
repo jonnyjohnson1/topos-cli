@@ -84,3 +84,4 @@ ipython_config.py
 /.idea
 /.DS_Store
 /_cache
+/.env
