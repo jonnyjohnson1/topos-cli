@@ -5,8 +5,26 @@ from fastapi import APIRouter, HTTPException
 import requests
 import tkinter as tk
 from tkinter import filedialog
-
+from topos.FC.conversation_cache_manager import ConversationCacheManager
 router = APIRouter()
+
+from pydantic import BaseModel
+
+cache_manager = ConversationCacheManager()
+class ConversationIDRequest(BaseModel):
+    conversation_id: str
+
+@router.post("/chat_conversation_analysis")
+async def chat_conversation_analysis(request: ConversationIDRequest):
+    # TESTING :: print the conversation (We want to test that it is loading right now)
+    conversation_id = request.conversation_id
+    # load conversation
+
+    conversation = cache_manager.load_from_cache(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found in cache")
+    # Return the conversation or any other response needed
+    return {"conversation": conversation}
 
 
 @router.post("/list_models")
