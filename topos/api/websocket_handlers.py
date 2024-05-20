@@ -74,6 +74,8 @@ async def chat(websocket: WebSocket):
             
 
             last_message = simp_msg_history[-1]['content']
+            role = simp_msg_history[-1]['role']
+            print("here", role)
             # Fetch base, per-message token classifiers
             if config['calculateInMessageNER']:
                 start_time = time.time()
@@ -96,12 +98,16 @@ async def chat(websocket: WebSocket):
             conv_cache_manager = ConversationCacheManager()
             if config['calculateModerationTags'] or config['calculateInMessageNER']:
                 print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
-                dummy_data = {
-                    message_id : 
-                        {
-                        'message': last_message, 
-                        'timestamp': datetime.now(), 
-                    }}
+                try:
+                    dummy_data = {
+                        message_id : 
+                            {
+                            'role': role,
+                            'timestamp': datetime.now(), 
+                            'message': last_message
+                        }}
+                except Exception as e:
+                    print("Error", e)
                 if config['calculateInMessageNER']:
                     dummy_data[message_id]['in_line'] = {'base_analysis': base_analysis}
                 if config['calculateModerationTags']:
@@ -115,10 +121,12 @@ async def chat(websocket: WebSocket):
                 # Sending first batch of user message analysis back to the UI
                 await websocket.send_json({"status": "fetched_user_analysis", 'user_message': dummy_data})
             else:
+                print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
                 # Saving an empty dictionary for the messag id
                 conv_cache_manager.save_to_cache(conversation_id, {
                     message_id : 
                         {
+                        'role': role,
                         'message': last_message, 
                         'timestamp': datetime.now(), 
                     }})
@@ -152,6 +160,7 @@ async def chat(websocket: WebSocket):
                 dummy_bot_data = {
                     chatbot_msg_id : 
                         {
+                        'role': "ChatBot",
                         'message': output_combined, 
                         'timestamp': datetime.now(), 
                     }}
@@ -170,6 +179,7 @@ async def chat(websocket: WebSocket):
                 conv_cache_manager.save_to_cache(conversation_id, {
                     chatbot_msg_id : 
                         {
+                        'role': "ChatBot",
                         'message': output_combined, 
                         'timestamp': datetime.now(), 
                     }})

@@ -8,6 +8,7 @@ from tkinter import filedialog
 from topos.FC.conversation_cache_manager import ConversationCacheManager
 router = APIRouter()
 
+from collections import Counter, OrderedDict, defaultdict
 from pydantic import BaseModel
 
 cache_manager = ConversationCacheManager()
@@ -16,11 +17,70 @@ class ConversationIDRequest(BaseModel):
 
 @router.post("/chat_conversation_analysis")
 async def chat_conversation_analysis(request: ConversationIDRequest):
-    # TESTING :: print the conversation (We want to test that it is loading right now)
     conversation_id = request.conversation_id
     # load conversation
+    conv_data = cache_manager.load_from_cache(conversation_id)
+    # Initialize counters
+    named_entity_counter = Counter()
+    entity_text_counter = Counter()
+    emotion_counter = Counter()
 
-    conversation = cache_manager.load_from_cache(conversation_id)
+    # Initialize role-based counters
+    named_entity_counter_per_role = defaultdict(Counter)
+    entity_text_counter_per_role = defaultdict(Counter)
+    emotion_counter_per_role = defaultdict(Counter)
+
+    # Extract counts
+    for conversation_id, messages in conv_data.items():
+        for message_id, content in messages.items():
+            role = content['role']
+            base_analysis = content['in_line']['base_analysis']
+            for entity_type, entities in base_analysis.items():
+                named_entity_counter[entity_type] += len(entities)
+                named_entity_counter_per_role[role][entity_type] += len(entities)
+                for entity in entities:
+                    entity_text_counter[str(entity['text'])] += 1
+                    entity_text_counter_per_role[role][str(entity['text'])] += 1
+            
+            emotions = content['commenter']['base_analysis']['emo_27']
+            for emotion in emotions:
+                emotion_counter[emotion['label']] += 1
+                emotion_counter_per_role[role][emotion['label']] += 1
+
+    # Evocations equals num of each entity
+    # print("Named Entity Count:")
+    # print(named_entity_counter)       # get the count of each entity from the conv_data
+
+    # # Actual Items summoned
+    # print("\nEntity Text Count:")
+    # print(entity_text_counter)        # get the count of each summoned item from the conv_data
+
+    # # Detected emotions in the population
+    # print("\nEmotion Count:")
+    # print(emotion_counter)            # also get a population count of all the emotions that were invoked in the conversation
+
+    
+    # Convert Counter objects to dictionaries
+    named_entity_dict = {
+        "totals": dict(named_entity_counter),
+        "per_role": {role: dict(counter) for role, counter in named_entity_counter_per_role.items()}
+    }
+    entity_text_dict = {
+        "totals": dict(entity_text_counter),
+        "per_role": {role: dict(counter) for role, counter in entity_text_counter_per_role.items()}
+    }
+    emotion_dict = {
+        "totals": dict(emotion_counter),
+        "per_role": {role: dict(counter) for role, counter in emotion_counter_per_role.items()}
+    }
+
+    # Create the final dictionary
+    conversation = {
+        'entity_evocations': named_entity_dict,
+        'entity_summons': entity_text_dict,
+        'emotions27': emotion_dict
+    }
+
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found in cache")
     # Return the conversation or any other response needed
