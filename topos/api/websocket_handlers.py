@@ -30,6 +30,19 @@ async def chat(websocket: WebSocket):
             model = payload.get("model", "solar")
             temperature = float(payload.get("temperature", 0.04))
             current_topic = payload.get("topic", "Unknown")
+            processing_config = payload.get("processing_config", {})
+
+            # Set default values if any key is missing or if processing_config is None
+            default_config = {
+                "showInMessageNER": True,
+                "calculateInMessageNER": True,
+                "showModerationTags": True,
+                "calculateModerationTags": True,
+                "showSidebarBaseAnalytics": True
+            }
+
+            # Update default_config with provided processing_config, if any
+            config = {**default_config, **processing_config}
 
             # Set system prompt
             has_topic = False
@@ -44,8 +57,8 @@ async def chat(websocket: WebSocket):
                 # Add the message history prior to the message
                 user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
 
-            print(f"\t[ system prompt :: {system_prompt} ]")
-            print(f"\t[ user prompt :: {user_prompt} ]")
+            # print(f"\t[ system prompt :: {system_prompt} ]")
+            # print(f"\t[ user prompt :: {user_prompt} ]")
             simp_msg_history = [{'role': 'system', 'content': system_prompt}]
 
             # Simplify message history to required format
@@ -59,48 +72,56 @@ async def chat(websocket: WebSocket):
                     simplified_message['images'] = message['images']
                 simp_msg_history.append(simplified_message)
             
-            # Fetch base, per-message token classifiers
-            last_message = simp_msg_history[-1]['content']
-            start_time = time.time()
-            base_analysis = base_token_classifier(last_message)  # this is only an ner dict atm
-            duration = time.time() - start_time
-            print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
-            
-            # if len(base_analysis) > 0:
-            #     print("ENTS (ner) :: ", base_analysis)
 
+            last_message = simp_msg_history[-1]['content']
+            # Fetch base, per-message token classifiers
+            if config['calculateInMessageNER']:
+                start_time = time.time()
+                base_analysis = base_token_classifier(last_message)  # this is only an ner dict atm
+                duration = time.time() - start_time
+                print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
+            
             # Fetch base, per-message text classifiers
             # Start timer for base_text_classifier
-            start_time = time.time()
-            text_classifiers = {}
-            try:
-                text_classifiers = base_text_classifier(last_message)
-            except Exception as e:
-                logging.error(f"Failed to compute base_text_classifier: {cache_path}: {e}")
-            duration = time.time() - start_time
-            print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
-
-            # print("Classifiers :: ", text_classifiers)
-
+            if config['calculateModerationTags']:
+                start_time = time.time()
+                text_classifiers = {}
+                try:
+                    text_classifiers = base_text_classifier(last_message)
+                except Exception as e:
+                    logging.error(f"Failed to compute base_text_classifier: {cache_path}: {e}")
+                duration = time.time() - start_time
+                print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
+            
             conv_cache_manager = ConversationCacheManager()
-            print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
-            dummy_data = {message_id : {
-                'message': last_message, 
-                'timestamp': datetime.now(), 
-                'in_line': {
-                    'base_analysis': base_analysis
-                },
-                'commenter': {
-                    'base_analysis': text_classifiers
-                }}}
+            if config['calculateModerationTags'] or config['calculateInMessageNER']:
+                print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
+                dummy_data = {
+                    message_id : 
+                        {
+                        'message': last_message, 
+                        'timestamp': datetime.now(), 
+                    }}
+                if config['calculateInMessageNER']:
+                    dummy_data[message_id]['in_line'] = {'base_analysis': base_analysis}
+                if config['calculateModerationTags']:
+                    dummy_data[message_id]['commenter'] = {'base_analysis': text_classifiers}
 
-            conv_cache_manager.save_to_cache(conversation_id, dummy_data)
-            # Removing the keys from the nested dictionary
-            if message_id in dummy_data:
-                dummy_data[message_id].pop('message', None)
-                dummy_data[message_id].pop('timestamp', None)
-            # Sending first batch of user message analysis back to the UI
-            await websocket.send_json({"status": "fetched_user_analysis", 'user_message': dummy_data})
+                conv_cache_manager.save_to_cache(conversation_id, dummy_data)
+                # Removing the keys from the nested dictionary
+                if message_id in dummy_data:
+                    dummy_data[message_id].pop('message', None)
+                    dummy_data[message_id].pop('timestamp', None)
+                # Sending first batch of user message analysis back to the UI
+                await websocket.send_json({"status": "fetched_user_analysis", 'user_message': dummy_data})
+            else:
+                # Saving an empty dictionary for the messag id
+                conv_cache_manager.save_to_cache(conversation_id, {
+                    message_id : 
+                        {
+                        'message': last_message, 
+                        'timestamp': datetime.now(), 
+                    }})
 
             # Processing the chat
             output_combined = ""
@@ -113,43 +134,53 @@ async def chat(websocket: WebSocket):
             semantic_category = semantic_compression.fetch_semantic_category(output_combined)
 
             # Start timer for base_token_classifier
-            start_time = time.time()
-            base_analysis = base_token_classifier(output_combined)
-            duration = time.time() - start_time
-            print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
-
-            # if len(base_analysis) > 0:
-            #     print("ENTS (ner) :: ", base_analysis)
+            if config['calculateInMessageNER']:
+                start_time = time.time()
+                base_analysis = base_token_classifier(output_combined)
+                duration = time.time() - start_time
+                print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
 
             # Start timer for base_text_classifier
-            start_time = time.time()
-            text_classifiers = base_text_classifier(output_combined)
-            duration = time.time() - start_time
-            print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
+            if config['calculateModerationTags']:
+                start_time = time.time()
+                text_classifiers = base_text_classifier(output_combined)
+                duration = time.time() - start_time
+                print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
 
-            conv_cache_manager = ConversationCacheManager()
-            print(f"\t[ save to conv cache :: conversation {conversation_id}-{chatbot_msg_id} ]")
-            dummy_bot_data = {
-                chatbot_msg_id : {
-                'message': output_combined, 
-                'timestamp': datetime.now(), 
-                'in_line': {
-                    'base_analysis': base_analysis
-                },
-                'commenter': {
-                    'base_analysis': text_classifiers
-                }}}
-                
-            conv_cache_manager.save_to_cache(conversation_id, dummy_bot_data)
-
-            # Removing the keys from the nested dictionary
-            if chatbot_msg_id in dummy_bot_data:
-                dummy_bot_data[chatbot_msg_id].pop('message', None)
-                dummy_bot_data[chatbot_msg_id].pop('timestamp', None)
+            if config['calculateModerationTags'] or config['calculateInMessageNER']:
+                print(f"\t[ save to conv cache :: conversation {conversation_id}-{chatbot_msg_id} ]")
+                dummy_bot_data = {
+                    chatbot_msg_id : 
+                        {
+                        'message': output_combined, 
+                        'timestamp': datetime.now(), 
+                    }}
+                if config['calculateInMessageNER']:
+                    dummy_bot_data[chatbot_msg_id]['in_line'] = {'base_analysis': base_analysis}
+                if config['calculateModerationTags']:
+                    dummy_bot_data[chatbot_msg_id]['commenter'] = {'base_analysis': text_classifiers}
+                conv_cache_manager.save_to_cache(conversation_id, dummy_bot_data)
+                # Removing the keys from the nested dictionary
+                if chatbot_msg_id in dummy_bot_data:
+                    dummy_bot_data[chatbot_msg_id].pop('message', None)
+                    dummy_bot_data[chatbot_msg_id].pop('timestamp', None)
+            else:
+                # Saving an empty dictionary for the messag id
+                print(f"\t[ save to conv cache :: conversation {conversation_id}-{chatbot_msg_id} ]")
+                conv_cache_manager.save_to_cache(conversation_id, {
+                    chatbot_msg_id : 
+                        {
+                        'message': output_combined, 
+                        'timestamp': datetime.now(), 
+                    }})
 
             # Send the final completed message
-            await websocket.send_json(
-                {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True, 'user_message': dummy_data, 'bot_data': dummy_bot_data})
+            send_pkg = {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True}
+            if config['calculateModerationTags'] or config['calculateInMessageNER']:
+                send_pkg['user_message'] = dummy_data
+                send_pkg['bot_data'] = dummy_bot_data
+                
+            await websocket.send_json(send_pkg)
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")

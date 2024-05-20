@@ -34,7 +34,7 @@ def get_text_sentiment_ternary(text):
     except Exception as e:
         logging.error(f"Failed to get_text_sentiment_ternary: {e}")
         return None
-    
+        
 
 def get_text_sentiment_6(text):
     try:
