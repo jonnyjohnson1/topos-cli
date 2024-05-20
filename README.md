@@ -7,6 +7,15 @@ Game options are:
 ## Install Instructions
 requires `brew install just`
 requires `brew install poetry`
+requires `brew install python-tk`
+
+## Graph Database - Install Neo4j
+
+### Install Neo4j Database on Osx
+brew install neo4j
+brew services start neo4j
+
+## Topos
 
 ### Step 1: Install Topos
 install the topos package with the command `just build`
