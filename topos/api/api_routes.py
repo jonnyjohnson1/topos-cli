@@ -11,15 +11,20 @@ router = APIRouter()
 from collections import Counter, OrderedDict, defaultdict
 from pydantic import BaseModel
 
+from ..generations.ollama_chat import generate_response
+
 cache_manager = ConversationCacheManager()
 class ConversationIDRequest(BaseModel):
     conversation_id: str
+
 
 @router.post("/chat_conversation_analysis")
 async def chat_conversation_analysis(request: ConversationIDRequest):
     conversation_id = request.conversation_id
     # load conversation
     conv_data = cache_manager.load_from_cache(conversation_id)
+    if conv_data is None:
+        raise HTTPException(status_code=404, detail="Conversation not found in cache")
     # Initialize counters
     named_entity_counter = Counter()
     entity_text_counter = Counter()
@@ -81,10 +86,68 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
         'emotions27': emotion_dict
     }
 
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found in cache")
+   
     # Return the conversation or any other response needed
     return {"conversation": conversation}
+
+import torch
+from diffusers import DiffusionPipeline
+@router.post("/chat/conv_to_image")
+async def chat_conversation_analysis(request: ConversationIDRequest):
+    conversation_id = request.conversation_id
+
+    # load conversation
+    conv_data = cache_manager.load_from_cache(conversation_id)
+    if conv_data is None:
+        raise HTTPException(status_code=404, detail="Conversation not found in cache")
+
+    # convert to a prompt
+    def create_conversation_string(conversation_data):
+        conversation_string = ""
+        for conv_id, messages in conversation_data.items():
+            for msg_id, message_info in messages.items():
+                role = message_info['role']
+                message = message_info['message']
+                conversation_string += f"{role}: {message}\n"
+        return conversation_string.strip()
+    model = "dolphin-llama3"
+    context = create_conversation_string(conv_data)
+    print(f"\t[ converting conversation to image to text prompt: using model {model}]")
+    conv_to_text_img_prompt = "Given the context, focusing on the users's messages, create an interesting, and compelling image-to-text prompt that can be used in a diffussor model [limit the response to only 77 tokens]. Speak more than words through metaphor, and steer the style of the image towards Slavador Dali fantastic and whimsical drawings, appealing to everyman-styles art themes."
+    txt_to_img_prompt = generate_response(context, conv_to_text_img_prompt, model=model, temperature=0)
+    print(txt_to_img_prompt)
+    print(f"\t[ generating a file name {model} ]")
+    txt_to_img_filename = generate_response(txt_to_img_prompt, "Based on the context create an appropriate, and BRIEF, filename with no spaces. Do not use any file extensions in your name, that will be added in a later step.", model=model, temperature=0)
+
+    # run huggingface comic diffusion
+    
+    pipeline = DiffusionPipeline.from_pretrained("ogkalu/Comic-Diffusion")
+    # Move the pipeline to the GPU if available, or to MPS if on an M-Series MacBook, otherwise to CPU
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+    pipeline.to(device)
+
+    # Generate an image based on the input text
+    prompt = "somewhere over the rainbow"
+    print(f"\t[ generating the image using: 'ogkalu/Comic-Diffusion' ]")
+    image = pipeline(txt_to_img_prompt).images[0]
+    file_name = f"{txt_to_img_filename}.png"
+    file_name = "".join(file_name.split())
+    # Save the generated image locally
+    image.save(file_name)
+
+    # Get file bytes to pass to UI
+    system_path = os.path.abspath("/")
+    print(system_path)
+    bytes_list = read_file_as_bytes(file_name)
+    media_type = "application/json"
+    
+    # return the image
+    return {"file_name" : file_name, "bytes": bytes_list, "prompt": txt_to_img_prompt}
 
 
 @router.post("/list_models")
@@ -113,10 +176,8 @@ async def get_files():
     system_path = os.path.abspath("/")
     print(system_path)
     bytes_list = read_file_as_bytes(file_path)
-    media_type="application/json",
-    
-    # data = json.dumps(, ensure_ascii=False)
-    # print(data[:110])
+    media_type = "application/json"
+    print(type(bytes_list))
     return {"file_name" : [i for i in file_path], "bytes": bytes_list}
 
 def read_file_as_bytes(file_path):
