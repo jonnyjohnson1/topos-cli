@@ -256,12 +256,13 @@ async def debate(websocket: WebSocket):
         await websocket.close()
 
 
-@router.websocket("/chat_introspection")
+@router.websocket("/websocket_meta_chat")
 async def debate(websocket: WebSocket):
     """
-    The point of this call is to allow a person to ask which direction 
-    they want to take the conversation and then receive a few suggestions 
-    on how to take the chat in that direction.
+    A chat about conversations.
+    This conversation is geared towards exploring the different directions
+    a speaker wishes to engage with a chat.
+    How to present themselves with _______ (personality, to elicit responses)
     """
     await websocket.accept()
     try:
@@ -270,6 +271,7 @@ async def debate(websocket: WebSocket):
             payload = json.loads(data)
             message = payload["message"]
             message_history = payload["message_history"]
+            meta_conv_message_history = payload["meta_conv_message_history"]
             model = payload.get("model", "solar")
             temperature = float(payload.get("temperature", 0.04))
             current_topic = payload.get("topic", "Unknown")
@@ -277,37 +279,42 @@ async def debate(websocket: WebSocket):
             # Set system prompt
             has_topic = False
             
+            print("here1")
             if current_topic != "Unknown":
                 has_topic = True
                 prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
 
-            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style:"
+            system_prompt = f"""You are an advance, and self-aware conversationalist with the ability to communicate clearly conversational strategies and tactics. You are helping someone explore their present conversation to find what it is they should say next given what they want to get out of it. If their goal is not stated, assume it has to do with engaging high-intensity emotions. 
+            Use established conversational methods from Cognitive Behavioral Therapy and Dialectical Behavioral Therapy."""
             user_prompt = ""
-            if message_history:
+            if meta_conv_message_history:
                 # Add the message history prior to the message
-                user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
+                user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in meta_conv_message_history)
 
             print(f"\t[ system prompt :: {system_prompt} ]")
             print(f"\t[ user prompt :: {user_prompt} ]")
             simp_msg_history = [{'role': 'system', 'content': system_prompt}]
 
             # Simplify message history to required format
-            for message in message_history:
+            for message in meta_conv_message_history:
                 simplified_message = {'role': message['role'], 'content': message['content']}
                 if 'images' in message:
                     simplified_message['images'] = message['images']
                 simp_msg_history.append(simplified_message)
 
             # Processing the chat
+            print("Starting chat stream")
+            print(simp_msg_history)
             output_combined = ""
             for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
-                output_combined += chunk
-                await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
-
-            # Fetch semantic category from the output
-            semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
-            semantic_category = semantic_compression.fetch_semantic_category(output_combined)
-
+                print("OUTPUT: ", output_combined)
+                try:
+                    output_combined += chunk
+                    await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
+                except Exception as e:
+                    print(e)
+                    await websocket.send_json({"status": "error", "message": str(e)})
+                    await websocket.close()
             # Send the final completed message
             await websocket.send_json(
                 {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True})
