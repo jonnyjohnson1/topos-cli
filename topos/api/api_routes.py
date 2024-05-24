@@ -106,10 +106,12 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
         conversation_string = ""
         for conv_id, messages in conversation_data.items():
             for msg_id, message_info in messages.items():
+                print(message_info)
                 role = message_info['role']
                 message = message_info['message']
                 conversation_string += f"{role}: {message}\n"
         return conversation_string.strip()
+
     model = "dolphin-llama3"
     context = create_conversation_string(conv_data)
     print(f"\t[ converting conversation to image to text prompt: using model {model}]")

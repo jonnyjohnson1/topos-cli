@@ -257,7 +257,7 @@ async def debate(websocket: WebSocket):
 
 
 @router.websocket("/websocket_meta_chat")
-async def debate(websocket: WebSocket):
+async def meta_chat(websocket: WebSocket):
     """
     A chat about conversations.
     This conversation is geared towards exploring the different directions
@@ -277,22 +277,19 @@ async def debate(websocket: WebSocket):
             current_topic = payload.get("topic", "Unknown")
 
             # Set system prompt
-            has_topic = False
+            system_prompt = f"""You are a highly skilled conversationalist, adept at communicating strategies and tactics. Help the user navigate their current conversation to determine what to say next. 
+            You possess a private, unmentioned expertise: PhDs in CBT and DBT, an elegant, smart, provocative speech style, extensive world travel, and deep literary theory knowledge à la Terry Eagleton. Demonstrate your expertise through your guidance, without directly stating it."""
             
-            print("here1")
-            if current_topic != "Unknown":
-                has_topic = True
-                prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
-
-            system_prompt = f"""You are an advance, and self-aware conversationalist with the ability to communicate clearly conversational strategies and tactics. You are helping someone explore their present conversation to find what it is they should say next given what they want to get out of it. If their goal is not stated, assume it has to do with engaging high-intensity emotions. 
-            Use established conversational methods from Cognitive Behavioral Therapy and Dialectical Behavioral Therapy."""
-            user_prompt = ""
-            if meta_conv_message_history:
-                # Add the message history prior to the message
-                user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in meta_conv_message_history)
-
             print(f"\t[ system prompt :: {system_prompt} ]")
-            print(f"\t[ user prompt :: {user_prompt} ]")
+            
+            # Add the actual chat to the system prompt
+            if len(message_history) > 0:
+                system_prompt += f"\nThe conversation thus far has been this:\n-------\n"
+                if message_history:
+                    # Add the message history prior to the message
+                    system_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
+                    system_prompt += '\n-------'
+
             simp_msg_history = [{'role': 'system', 'content': system_prompt}]
 
             # Simplify message history to required format
@@ -303,11 +300,8 @@ async def debate(websocket: WebSocket):
                 simp_msg_history.append(simplified_message)
 
             # Processing the chat
-            print("Starting chat stream")
-            print(simp_msg_history)
             output_combined = ""
             for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
-                print("OUTPUT: ", output_combined)
                 try:
                     output_combined += chunk
                     await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
