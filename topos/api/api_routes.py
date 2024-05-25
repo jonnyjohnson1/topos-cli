@@ -90,10 +90,22 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     # Return the conversation or any other response needed
     return {"conversation": conversation}
 
+
+ # convert to a prompt
+def create_conversation_string(conversation_data):
+    conversation_string = ""
+    for conv_id, messages in conversation_data.items():
+        for msg_id, message_info in messages.items():
+            role = message_info['role']
+            message = message_info['message']
+            conversation_string += f"{role}: {message}\n"
+    return conversation_string.strip()
+
+
 import torch
 from diffusers import DiffusionPipeline
 @router.post("/chat/conv_to_image")
-async def chat_conversation_analysis(request: ConversationIDRequest):
+async def conv_to_image(request: ConversationIDRequest):
     conversation_id = request.conversation_id
 
     # load conversation
@@ -101,23 +113,13 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     if conv_data is None:
         raise HTTPException(status_code=404, detail="Conversation not found in cache")
 
-    # convert to a prompt
-    def create_conversation_string(conversation_data):
-        conversation_string = ""
-        for conv_id, messages in conversation_data.items():
-            for msg_id, message_info in messages.items():
-                print(message_info)
-                role = message_info['role']
-                message = message_info['message']
-                conversation_string += f"{role}: {message}\n"
-        return conversation_string.strip()
-
+   
     model = "dolphin-llama3"
     context = create_conversation_string(conv_data)
     print(f"\t[ converting conversation to image to text prompt: using model {model}]")
     conv_to_text_img_prompt = "Given the context, focusing on the users's messages, create an interesting, and compelling image-to-text prompt that can be used in a diffussor model [limit the response to only 77 tokens]. Speak more than words through metaphor, and steer the style of the image towards Slavador Dali fantastic and whimsical drawings, appealing to everyman-styles art themes."
     txt_to_img_prompt = generate_response(context, conv_to_text_img_prompt, model=model, temperature=0)
-    print(txt_to_img_prompt)
+    # print(txt_to_img_prompt)
     print(f"\t[ generating a file name {model} ]")
     txt_to_img_filename = generate_response(txt_to_img_prompt, "Based on the context create an appropriate, and BRIEF, filename with no spaces. Do not use any file extensions in your name, that will be added in a later step.", model=model, temperature=0)
 
@@ -151,6 +153,49 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     # return the image
     return {"file_name" : file_name, "bytes": bytes_list, "prompt": txt_to_img_prompt}
 
+
+class GenNextMessageOptions(BaseModel):
+    conversation_id: str
+    query: str
+    model: str
+
+@router.post("/gen_next_message_options")
+async def create_next_messages(request: GenNextMessageOptions):
+    conversation_id = request.conversation_id
+    query = request.query
+    model = request.model if request.model != None else "dolphin-llama3"
+
+    # load conversation
+    conv_data = cache_manager.load_from_cache(conversation_id)
+    if conv_data is None:
+        raise HTTPException(status_code=404, detail="Conversation not found in cache")
+
+    context = create_conversation_string(conv_data)
+    print(f"\t[ generating next message options: using model {model}]")
+
+    system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
+    system_prompt += """Given the conversation, and what the user desires to accomplish, pretend you are in their shoes, role-play, and offer 3 messages the user can use in the conversation next.
+Generate options based on these parameters.
+
+conversation.json:
+{
+    "tone (formal-warm; 0-10)": 10,
+    "pace (leisure-fast; 0-10)": 1,
+    "depth (simple-profound; 0-10): 3,
+    "engagement (low-high; 0-10): 0,
+    "message length (short-long; 0-10): 2
+}
+
+Rules:
+Wrap each message option in a markdown codeblock.
+"""
+    print(system_prompt)
+    print(query)
+    next_message_options = generate_response(system_prompt, query, model=model, temperature=0)
+    print(next_message_options)
+    
+    # return the image
+    return {"response" : next_message_options}
 
 @router.post("/list_models")
 async def list_models():
