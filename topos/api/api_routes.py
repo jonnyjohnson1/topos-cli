@@ -159,13 +159,21 @@ class GenNextMessageOptions(BaseModel):
     conversation_id: str
     query: str
     model: str
+    voice_settings: dict
 
 @router.post("/gen_next_message_options")
 async def create_next_messages(request: GenNextMessageOptions):
     conversation_id = request.conversation_id
     query = request.query
     model = request.model if request.model != None else "dolphin-llama3"
-
+    voice_settings = request.voice_settings  if request.voice_settings != None else """{
+    "tone": "analytical",
+    "distance": "distant",
+    "pace": "leisurely",
+    "depth": "insightful",
+    "engagement": "engaging",
+    "message length": "brief"
+}"""
     # load conversation
     conv_data = cache_manager.load_from_cache(conversation_id)
     if conv_data is None:
@@ -174,24 +182,20 @@ async def create_next_messages(request: GenNextMessageOptions):
     context = create_conversation_string(conv_data, 12)
     print(f"\t[ generating next message options: using model {model}]")
 
-    system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
-    system_prompt += """Given the conversation, and what the user desires to accomplish, pretend you are in their shoes, role-play, and offer 3 messages the user can use in the conversation next.
-Generate options based on these parameters.
 
+    conv_json = f"""
 conversation.json:
-{
-    "tone (formal-warm; 0-10)": warm,
-    "pace (leisure-fast; 0-10)": leisurely,
-    "depth (simple-profound; 0-10): insightful,
-    "engagement (low-high; 0-10): engaging,
-    "message length (short-long; 0-10): brief
-}
-
-Rules:
-Wrap each message option in a markdown codeblock.
+{voice_settings}
 """
-    print(system_prompt)
-    print(query)
+    print(conv_json)
+
+    system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
+    system_prompt += """Roleplay with the current conversation, and offer 3 messages the user can speak next.
+Generate options based on these parameters.
+"""
+    system_prompt += conv_json
+
+
     next_message_options = generate_response(system_prompt, query, model=model, temperature=0)
     print(next_message_options)
     
