@@ -74,6 +74,7 @@ async def chat(websocket: WebSocket):
             
 
             last_message = simp_msg_history[-1]['content']
+            role = simp_msg_history[-1]['role']
             # Fetch base, per-message token classifiers
             if config['calculateInMessageNER']:
                 start_time = time.time()
@@ -96,12 +97,16 @@ async def chat(websocket: WebSocket):
             conv_cache_manager = ConversationCacheManager()
             if config['calculateModerationTags'] or config['calculateInMessageNER']:
                 print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
-                dummy_data = {
-                    message_id : 
-                        {
-                        'message': last_message, 
-                        'timestamp': datetime.now(), 
-                    }}
+                try:
+                    dummy_data = {
+                        message_id : 
+                            {
+                            'role': role,
+                            'timestamp': datetime.now(), 
+                            'message': last_message
+                        }}
+                except Exception as e:
+                    print("Error", e)
                 if config['calculateInMessageNER']:
                     dummy_data[message_id]['in_line'] = {'base_analysis': base_analysis}
                 if config['calculateModerationTags']:
@@ -115,10 +120,12 @@ async def chat(websocket: WebSocket):
                 # Sending first batch of user message analysis back to the UI
                 await websocket.send_json({"status": "fetched_user_analysis", 'user_message': dummy_data})
             else:
+                print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
                 # Saving an empty dictionary for the messag id
                 conv_cache_manager.save_to_cache(conversation_id, {
                     message_id : 
                         {
+                        'role': role,
                         'message': last_message, 
                         'timestamp': datetime.now(), 
                     }})
@@ -152,6 +159,7 @@ async def chat(websocket: WebSocket):
                 dummy_bot_data = {
                     chatbot_msg_id : 
                         {
+                        'role': "ChatBot",
                         'message': output_combined, 
                         'timestamp': datetime.now(), 
                     }}
@@ -170,6 +178,7 @@ async def chat(websocket: WebSocket):
                 conv_cache_manager.save_to_cache(conversation_id, {
                     chatbot_msg_id : 
                         {
+                        'role': "ChatBot",
                         'message': output_combined, 
                         'timestamp': datetime.now(), 
                     }})
@@ -239,6 +248,70 @@ async def debate(websocket: WebSocket):
             # Send the final completed message
             await websocket.send_json(
                 {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True})
+
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+    except Exception as e:
+        await websocket.send_json({"status": "error", "message": str(e)})
+        await websocket.close()
+
+
+@router.websocket("/websocket_meta_chat")
+async def meta_chat(websocket: WebSocket):
+    """
+    A chat about conversations.
+    This conversation is geared towards exploring the different directions
+    a speaker wishes to engage with a chat.
+    How to present themselves with _______ (personality, to elicit responses)
+    """
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            message = payload["message"]
+            message_history = payload["message_history"]
+            meta_conv_message_history = payload["meta_conv_message_history"]
+            model = payload.get("model", "solar")
+            temperature = float(payload.get("temperature", 0.04))
+            current_topic = payload.get("topic", "Unknown")
+
+            # Set system prompt
+            system_prompt = f"""You are a highly skilled conversationalist, adept at communicating strategies and tactics. Help the user navigate their current conversation to determine what to say next. 
+            You possess a private, unmentioned expertise: PhDs in CBT and DBT, an elegant, smart, provocative speech style, extensive world travel, and deep literary theory knowledge à la Terry Eagleton. Demonstrate your expertise through your guidance, without directly stating it."""
+            
+            print(f"\t[ system prompt :: {system_prompt} ]")
+            
+            # Add the actual chat to the system prompt
+            if len(message_history) > 0:
+                system_prompt += f"\nThe conversation thus far has been this:\n-------\n"
+                if message_history:
+                    # Add the message history prior to the message
+                    system_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
+                    system_prompt += '\n-------'
+
+            simp_msg_history = [{'role': 'system', 'content': system_prompt}]
+
+            # Simplify message history to required format
+            for message in meta_conv_message_history:
+                simplified_message = {'role': message['role'], 'content': message['content']}
+                if 'images' in message:
+                    simplified_message['images'] = message['images']
+                simp_msg_history.append(simplified_message)
+
+            # Processing the chat
+            output_combined = ""
+            for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
+                try:
+                    output_combined += chunk
+                    await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
+                except Exception as e:
+                    print(e)
+                    await websocket.send_json({"status": "error", "message": str(e)})
+                    await websocket.close()
+            # Send the final completed message
+            await websocket.send_json(
+                {"status": "completed", "response": output_combined, "completed": True})
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
