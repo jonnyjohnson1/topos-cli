@@ -311,7 +311,7 @@ async def meta_chat(websocket: WebSocket):
                     await websocket.close()
             # Send the final completed message
             await websocket.send_json(
-                {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True})
+                {"status": "completed", "response": output_combined, "completed": True})
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")

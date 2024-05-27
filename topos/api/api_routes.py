@@ -91,11 +91,12 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     return {"conversation": conversation}
 
 
- # convert to a prompt
-def create_conversation_string(conversation_data):
+# convert to a prompt
+def create_conversation_string(conversation_data, last_n_messages):
     conversation_string = ""
     for conv_id, messages in conversation_data.items():
-        for msg_id, message_info in messages.items():
+        last_messages = list(messages.items())[-last_n_messages:]
+        for msg_id, message_info in last_messages:
             role = message_info['role']
             message = message_info['message']
             conversation_string += f"{role}: {message}\n"
@@ -115,16 +116,16 @@ async def conv_to_image(request: ConversationIDRequest):
 
    
     model = "dolphin-llama3"
-    context = create_conversation_string(conv_data)
+    context = create_conversation_string(conv_data, 6)
+    print(context)
     print(f"\t[ converting conversation to image to text prompt: using model {model}]")
-    conv_to_text_img_prompt = "Given the context, focusing on the users's messages, create an interesting, and compelling image-to-text prompt that can be used in a diffussor model [limit the response to only 77 tokens]. Speak more than words through metaphor, and steer the style of the image towards Slavador Dali fantastic and whimsical drawings, appealing to everyman-styles art themes."
+    conv_to_text_img_prompt = "Create an interesting, and compelling image-to-text prompt that can be used in a diffussor model. Be concise and convey more with the use of metaphor. Steer the image style towards Slavador Dali's fantastic, atmospheric, heroesque paintings that appeal to everyman themes."
     txt_to_img_prompt = generate_response(context, conv_to_text_img_prompt, model=model, temperature=0)
     # print(txt_to_img_prompt)
     print(f"\t[ generating a file name {model} ]")
     txt_to_img_filename = generate_response(txt_to_img_prompt, "Based on the context create an appropriate, and BRIEF, filename with no spaces. Do not use any file extensions in your name, that will be added in a later step.", model=model, temperature=0)
 
     # run huggingface comic diffusion
-    
     pipeline = DiffusionPipeline.from_pretrained("ogkalu/Comic-Diffusion")
     # Move the pipeline to the GPU if available, or to MPS if on an M-Series MacBook, otherwise to CPU
     if torch.cuda.is_available():
@@ -170,7 +171,7 @@ async def create_next_messages(request: GenNextMessageOptions):
     if conv_data is None:
         raise HTTPException(status_code=404, detail="Conversation not found in cache")
 
-    context = create_conversation_string(conv_data)
+    context = create_conversation_string(conv_data, 12)
     print(f"\t[ generating next message options: using model {model}]")
 
     system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
@@ -179,11 +180,11 @@ Generate options based on these parameters.
 
 conversation.json:
 {
-    "tone (formal-warm; 0-10)": 10,
-    "pace (leisure-fast; 0-10)": 1,
-    "depth (simple-profound; 0-10): 3,
-    "engagement (low-high; 0-10): 0,
-    "message length (short-long; 0-10): 2
+    "tone (formal-warm; 0-10)": warm,
+    "pace (leisure-fast; 0-10)": leisurely,
+    "depth (simple-profound; 0-10): insightful,
+    "engagement (low-high; 0-10): engaging,
+    "message length (short-long; 0-10): brief
 }
 
 Rules:
