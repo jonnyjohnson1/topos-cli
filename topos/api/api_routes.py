@@ -12,6 +12,7 @@ from collections import Counter, OrderedDict, defaultdict
 from pydantic import BaseModel
 
 from ..generations.ollama_chat import generate_response
+from ..utilities.utils import create_conversation_string
 
 cache_manager = ConversationCacheManager()
 class ConversationIDRequest(BaseModel):
@@ -90,17 +91,6 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     # Return the conversation or any other response needed
     return {"conversation": conversation}
 
-
-# convert to a prompt
-def create_conversation_string(conversation_data, last_n_messages):
-    conversation_string = ""
-    for conv_id, messages in conversation_data.items():
-        last_messages = list(messages.items())[-last_n_messages:]
-        for msg_id, message_info in last_messages:
-            role = message_info['role']
-            message = message_info['message']
-            conversation_string += f"{role}: {message}\n"
-    return conversation_string.strip()
 
 
 import torch
@@ -199,8 +189,68 @@ Generate options based on these parameters.
     next_message_options = generate_response(system_prompt, query, model=model, temperature=0)
     print(next_message_options)
     
-    # return the image
+    # return the options
     return {"response" : next_message_options}
+
+
+
+class ConversationSummaryRequest(BaseModel):
+    conversation_id: str
+    subject: str
+    model: str
+
+# @router.post("/gen_conversation_summary")
+# async def create_next_messages(request: ConversationSummaryRequest):
+#     conversation_id = request.conversation_id
+#     subject = request.subject
+#     model = request.model if request.model != None else "dolphin-llama3"
+
+#     # load conversation
+#     conv_data = cache_manager.load_from_cache(conversation_id)
+#     if conv_data is None:
+#         raise HTTPException(status_code=404, detail="Conversation not found in cache")
+
+#     context = create_conversation_string(conv_data, 12)
+#     print(f"\t[ generating summary :: model {model} :: subject {subject}]")
+
+#     system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
+#     query = f"""Summarize this conversation. Frame your response around the subject of {subject}
+# """
+
+#     summarized_conversation = generate_response(system_prompt, query, model=model, temperature=0)
+#     print(summarized_conversation)
+    
+#     # return the summary
+#     return {"response" : summarized_conversation}
+
+
+
+class ConversationTopicsRequest(BaseModel):
+    conversation_id: str
+    model: str
+
+@router.post("/gen_conversation_topics")
+async def create_next_messages(request: ConversationSummaryRequest):
+    conversation_id = request.conversation_id
+    model = request.model if request.model != None else "dolphin-llama3"
+
+    # load conversation
+    conv_data = cache_manager.load_from_cache(conversation_id)
+    if conv_data is None:
+        raise HTTPException(status_code=404, detail="Conversation not found in cache")
+
+    context = create_conversation_string(conv_data, 12)
+    print(f"\t[ generating summary :: model {model} :: subject {subject}]")
+
+    # topic list first pass
+    system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
+    query += """List the topics and those closely related to what this conversation traverses."""
+    topic_list = generate_response(system_prompt, query, model=model, temperature=0)
+    print(topic_list)
+
+    # return the image
+    return {"response" : topic_list}
+
 
 @router.post("/list_models")
 async def list_models():

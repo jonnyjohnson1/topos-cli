@@ -8,6 +8,7 @@ from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
 import json
 
+from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
 router = APIRouter()
 
@@ -318,3 +319,63 @@ async def meta_chat(websocket: WebSocket):
     except Exception as e:
         await websocket.send_json({"status": "error", "message": str(e)})
         await websocket.close()
+
+
+@router.websocket("/websocket_chat_summary")
+async def meta_chat(websocket: WebSocket):
+    """
+
+    Generates a summary of the conversation oriented around a given focal point.
+    
+    """
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            
+            conversation_id = payload["conversation_id"]
+            subject = payload.get("subject", "knowledge")
+            model = payload.get("model", "solar")
+            temperature = float(payload.get("temperature", 0.04))
+
+            # load conversation
+            cache_manager = ConversationCacheManager()
+            conv_data = cache_manager.load_from_cache(conversation_id)
+            if conv_data is None:
+                raise HTTPException(status_code=404, detail="Conversation not found in cache")
+
+            context = create_conversation_string(conv_data, 12)
+
+            print(f"\t[ generating summary :: model {model} :: subject {subject}]")
+
+            # Set system prompt
+            system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
+            query = f"""Summarize this conversation. Frame your response around the subject of {subject}"""
+            
+            msg_history = [{'role': 'system', 'content': system_prompt}]
+
+            # Append the present message to the message history
+            simplified_message = {'role': "user", 'content': query}
+            msg_history.append(simplified_message)
+
+            # Processing the chat
+            output_combined = ""
+            for chunk in stream_chat(msg_history, model=model, temperature=temperature):
+                try:
+                    output_combined += chunk
+                    await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
+                except Exception as e:
+                    print(e)
+                    await websocket.send_json({"status": "error", "message": str(e)})
+                    await websocket.close()
+            # Send the final completed message
+            await websocket.send_json(
+                {"status": "completed", "response": output_combined, "completed": True})
+
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+    except Exception as e:
+        await websocket.send_json({"status": "error", "message": str(e)})
+        await websocket.close()
+

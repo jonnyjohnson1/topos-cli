@@ -15,7 +15,6 @@ def get_full_name(label):
         "V2": "Violence/graphic",
         "OK": "OK"
     }
-
     return labels_table.get(label, "Unknown label")
 
 def get_text_moderation_levels(text):
@@ -30,7 +29,12 @@ def get_text_moderation_levels(text):
 def get_text_sentiment_ternary(text):
     try:
         pipe = pipeline("text-classification", model="finiteautomata/bertweet-base-sentiment-analysis", truncation=True, max_length=128)
-        return pipe(text)
+        try:
+            results = pipe(text)
+            return results
+        except Exception as e:
+            logging.error(f"Failed to get_text_sentiment_ternary: {e}")
+            return None
     except Exception as e:
         logging.error(f"Failed to get_text_sentiment_ternary: {e}")
         return None
