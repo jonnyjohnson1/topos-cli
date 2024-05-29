@@ -27,7 +27,7 @@ There is the local option to connect the local apps to the Topos API (Grow debug
 
 def start_local_api():
     """Function to start the API in local mode."""
-    print("\033[92mINFO:\033[0m     API docs available at: http://0.0.0.0:13341/docs")
+    print("\033[92mINFO:\033[0m     API docs available at: \033[1mhttp://0.0.0.0:13341/docs\033[0m")
     uvicorn.run(app, host="0.0.0.0", port=13341)
 
 

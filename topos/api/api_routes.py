@@ -193,44 +193,12 @@ Generate options based on these parameters.
     return {"response" : next_message_options}
 
 
-
-class ConversationSummaryRequest(BaseModel):
-    conversation_id: str
-    subject: str
-    model: str
-
-# @router.post("/gen_conversation_summary")
-# async def create_next_messages(request: ConversationSummaryRequest):
-#     conversation_id = request.conversation_id
-#     subject = request.subject
-#     model = request.model if request.model != None else "dolphin-llama3"
-
-#     # load conversation
-#     conv_data = cache_manager.load_from_cache(conversation_id)
-#     if conv_data is None:
-#         raise HTTPException(status_code=404, detail="Conversation not found in cache")
-
-#     context = create_conversation_string(conv_data, 12)
-#     print(f"\t[ generating summary :: model {model} :: subject {subject}]")
-
-#     system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
-#     query = f"""Summarize this conversation. Frame your response around the subject of {subject}
-# """
-
-#     summarized_conversation = generate_response(system_prompt, query, model=model, temperature=0)
-#     print(summarized_conversation)
-    
-#     # return the summary
-#     return {"response" : summarized_conversation}
-
-
-
 class ConversationTopicsRequest(BaseModel):
     conversation_id: str
     model: str
 
 @router.post("/gen_conversation_topics")
-async def create_next_messages(request: ConversationSummaryRequest):
+async def create_next_messages(request: ConversationTopicsRequest):
     conversation_id = request.conversation_id
     model = request.model if request.model != None else "dolphin-llama3"
 
@@ -264,6 +232,9 @@ async def list_models():
     except requests.ConnectionError:
         raise HTTPException(status_code=500, detail="Server connection error")
 
+@router.post("/test")
+async def test():
+    return "hello world"
 
 @router.post("/get_files")
 async def get_files():
