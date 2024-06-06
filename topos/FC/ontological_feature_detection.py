@@ -1,13 +1,10 @@
 # ontological_feature_detection.py
 
-import os
-
 import nltk
 import spacy
 import warnings
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 from neo4j import GraphDatabase
-from dotenv import load_dotenv
 
 # Suppress specific warnings related to model initialization
 warnings.filterwarnings("ignore", message="Some weights of the model checkpoint at")
