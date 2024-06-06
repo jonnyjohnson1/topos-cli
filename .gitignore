@@ -1,8 +1,8 @@
-/_cache/*
-!/_cache/.gitignore
+/topos/_cache/*
+!/topos/_cache/.gitignore
 
-/_conv_cache/*
-!/_conv_cache/.gitignore
+/topos/_conv_cache/*
+!/topos/_conv_cache/.gitignore
 
 
 # Byte-compiled / optimized / DLL files
