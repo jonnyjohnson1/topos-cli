@@ -1,4 +1,25 @@
 # utils.py
+import os
+
+def get_root_directory():
+    def find_setup_py_upwards(start_path):
+        current_path = start_path
+        while True:
+            if 'setup.py' in os.listdir(current_path):
+                return current_path
+            parent_path = os.path.abspath(os.path.join(current_path, os.pardir))
+            if parent_path == current_path:  # Reached the root directory
+                return None
+            current_path = parent_path
+
+    # Starting from the current directory
+    current_directory = os.path.abspath('.')
+    setup_py_dir = find_setup_py_upwards(current_directory)
+
+    if setup_py_dir is None:
+        raise FileNotFoundError("setup.py not found in the directory tree.")
+
+    return setup_py_dir
 
 def parse_json(data):
     import json
