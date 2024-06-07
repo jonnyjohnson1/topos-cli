@@ -214,13 +214,18 @@ async def debate(websocket: WebSocket):
 
             # Set system prompt
             has_topic = False
+            system_prompt = f""
             
-            if current_topic != "Unknown":
+            if current_topic == "unknown topic":
+                system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style, in the format of:\n
+                                {{\"role\":\"moderator\", \"content\":\"I think the topic might be...(_insert name of what you think the topic might be based on the ongoing discussion here!_)\", \"certainty_score\": \"(_insert certainty score 1-10 here!_)\"}}"""
+            else:
                 has_topic = True
-                prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
+                system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n
+                                You keep track of who is speaking, in the context of saying out loud every round:\n
+                                {{\"role\":\"moderator\", \"content\":\"The topic is...(_insert name of topic here!_)\", "affirmative_negative score": "(_insert affirmative or negative score, -10 to +10, here!_)"}}"""
 
-            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style:"
-            user_prompt = ""
+            user_prompt = f""
             if message_history:
                 # Add the message history prior to the message
                 user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
@@ -241,6 +246,19 @@ async def debate(websocket: WebSocket):
             for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
                 output_combined += chunk
                 await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
+
+            # test = {'role': 'moderator', 'content': 'I think the topic might be Chess versus Checkers.', 'certainty_score': '8'}
+            # test_msg = json.dumps(test)
+
+            output_json = []
+            try:
+                result = json.loads(f"{output_combined}")
+                output_json = result
+            except json.JSONDecodeError:
+                output_json = output_combined
+                print(f"\t\t[ error in decoding :: {output_combined} ]")
+
+            # user1: i want to debate chess vs checkers                                           user2: i want to debate chess vs go                            moderator insight: maybe the debate is, in and of itself, at a higher level of abstraction - maybe we should debate about a. debate checkers vs chess, vs. b debate checkers vs go?
 
             # Fetch semantic category from the output
             semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
