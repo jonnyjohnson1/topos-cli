@@ -1,12 +1,12 @@
 # ontological_feature_detection.py
 
 import subprocess
-
 import nltk
 import spacy
 import warnings
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
-from neo4j import GraphDatabase
+from datetime import datetime
+from topos.services.database.neo4j_connector import Neo4jConnection
 
 # Suppress specific warnings related to model initialization
 warnings.filterwarnings("ignore", message="Some weights of the model checkpoint at")
@@ -26,7 +26,7 @@ for resource, package in nltk_packages:
 
 
 class OntologicalFeatureDetection:
-    def __init__(self, neo4j_uri, neo4j_user, neo4j_password):
+    def __init__(self, neo4j_uri, neo4j_user, neo4j_password, neo4j_database_name):
         # Initialize the tokenizer and model for SRL
         self.tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER")
         self.model = AutoModelForTokenClassification.from_pretrained("dslim/bert-base-NER")
@@ -34,7 +34,6 @@ class OntologicalFeatureDetection:
         spacy_model_name = 'en_core_web_lg'
 
         # Load SpaCy models
-        # Ensure the SpaCy model is installed
         try:
             self.nlp = spacy.load(spacy_model_name)
         except OSError:
@@ -47,11 +46,17 @@ class OntologicalFeatureDetection:
         patterns = [{"label": "USER", "pattern": "userABC"}, {"label": "SESSION", "pattern": "sessionXYZ"}]
         ruler.add_patterns(patterns)
 
-        # Initialize Neo4j connection
-        self.driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+        #@note: neo4j only allows one database per instance
+        self.database = "neo4j"#neo4j_database_name
+
+        # Initialize Neo4j connection using singleton
+        self.neo4j_conn = Neo4jConnection(neo4j_uri, neo4j_user, neo4j_password)
+        self.driver = self.neo4j_conn.get_driver()
 
     def close(self):
-        self.driver.close()
+        # Only close the connection if it is not shared by other instances
+        if self.neo4j_conn:
+            self.neo4j_conn.close()
 
     def perform_ner(self, text):
         doc = self.nlp(text)
@@ -78,36 +83,94 @@ class OntologicalFeatureDetection:
         return results
 
     def perform_relation_extraction(self, text):
-        # Placeholder for relation extraction
         relations = []
         print(f"Relation extraction results: {relations}")
         return relations
 
-    def add_entity(self, tx, entity, label):
-        print(f"Adding entity: {entity}, label: {label}")
-        tx.run("MERGE (e:Entity {name: $entity, label: $label})", entity=entity, label=label)
+    def add_entity(self, tx, entity, label, timestamp):
+        print(f"Adding entity: {entity}, label: {label} at {timestamp}")
+        tx.run("MERGE (e:Entity {name: $entity, label: $label, created_at: $timestamp})",
+               entity=entity, label=label, timestamp=timestamp)
 
-    def add_relation(self, tx, entity1, relation, entity2):
-        print(f"Adding relation: ({entity1})-[:{relation}]->({entity2})")
-        tx.run("MATCH (a:Entity {name: $entity1}), (b:Entity {name: $entity2}) "
-               "MERGE (a)-[r:RELATION {type: $relation}]->(b)",
-               entity1=entity1, relation=relation, entity2=entity2)
+    def add_relation(self, tx, entity1, relation, entity2, timestamp):
+        print(f"Attempting to create relationship: ({entity1})-[:{relation}]->({entity2}) at {timestamp}")
+        result = tx.run("MATCH (a:Entity {name: $entity1}), (b:Entity {name: $entity2}) "
+                        "MERGE (a)-[r:RELATION {type: $relation, created_at: $timestamp}]->(b) "
+                        "RETURN r",
+                        entity1=entity1, relation=relation, entity2=entity2, timestamp=timestamp)
+        relationships = result.values()
+        # print(f"Relationships created: {relationships}")
+        assert len(relationships) > 0, f"Failed to create relationship ({entity1})-[:{relation}]->({entity2})"
+
+        # print(f"Relationship created: ({entity1})-[:{relation}]->({entity2}) at {timestamp}")
 
     def build_ontology_from_paragraph(self, text):
+        print(f"Processing text for ontology: {text}")
         entities = self.perform_ner(text)
         pos_tags = self.perform_pos_tagging(text)
         dependencies = self.perform_dependency_parsing(text)
         srl_results = self.perform_srl(text)
         relations = self.perform_relation_extraction(text)
+        timestamp = datetime.now().isoformat()
 
-        with self.driver.session() as session:
-            for entity, label in entities:
-                session.execute_write(self.add_entity, entity, label)
+        user = "userABC"
+        session_entity = "sessionXYZ"
+        message_entity = text.replace(" ", "_")
 
-            for relation in relations:
-                session.execute_write(self.add_relation, relation['entity1'], relation['relation'], relation['entity2'])
+        with self.driver.session(database=self.database) as neo4j_session:
+            # Insert user and session entities
+            neo4j_session.execute_write(self.add_entity, user, "USER", timestamp)
+            neo4j_session.execute_write(self.add_entity, session_entity, "SESSION", timestamp)
+
+            # Insert message entity
+            neo4j_session.execute_write(self.add_entity, message_entity, "MESSAGE", timestamp)
+
+            # Create relationships between user, session, and message
+            print(f"Creating relationship: ({user})-[:SENT]->({message_entity})")
+            neo4j_session.execute_write(self.add_relation, user, "SENT", message_entity, timestamp)
+            print(f"Creating relationship: ({session_entity})-[:CONTAINS]->({message_entity})")
+            neo4j_session.execute_write(self.add_relation, session_entity, "CONTAINS", message_entity, timestamp)
+            print(f"Creating relationship: ({user})-[:PARTICIPATED_IN]->({session_entity})")
+            neo4j_session.execute_write(self.add_relation, user, "PARTICIPATED_IN", session_entity, timestamp)
+
+            # Verify data insertion
+            self.verify_data_insertion(neo4j_session, user, session_entity, message_entity)
 
         return entities, dependencies, srl_results
+
+    def verify_data_insertion(self, neo4j_session, user, session_entity, message_entity):
+        # Verify user entity
+        result = neo4j_session.run("MATCH (e:Entity {name: $name, label: 'USER'}) RETURN e", name=user)
+        user_node = result.single()
+        print(f"Verification - User Node: {user_node}")
+        assert user_node is not None, f"User {user} not found in database."
+
+        # Verify session entity
+        result = neo4j_session.run("MATCH (e:Entity {name: $name, label: 'SESSION'}) RETURN e", name=session_entity)
+        session_node = result.single()
+        print(f"Verification - Session Node: {session_node}")
+        assert session_node is not None, f"Session {session_entity} not found in database."
+
+        # Verify message entity
+        result = neo4j_session.run("MATCH (e:Entity {name: $name, label: 'MESSAGE'}) RETURN e", name=message_entity)
+        message_node = result.single()
+        print(f"Verification - Message Node: {message_node}")
+        assert message_node is not None, f"Message {message_entity} not found in database."
+
+        # Verify relationships
+        self.verify_relationship(neo4j_session, user, message_entity, "SENT")
+        self.verify_relationship(neo4j_session, session_entity, message_entity, "CONTAINS")
+        self.verify_relationship(neo4j_session, user, session_entity, "PARTICIPATED_IN")
+
+    def verify_relationship(self, neo4j_session, start_entity, end_entity, relation_type):
+        result = neo4j_session.run(
+            "MATCH (a:Entity {name: $start_entity})-[r:RELATION {type: $relation_type}]->(b:Entity {name: $end_entity}) "
+            "RETURN r",
+            start_entity=start_entity, relation_type=relation_type, end_entity=end_entity)
+        relationships = result.values()
+        print(f"Verification - Relationships ({start_entity})-[:{relation_type}]->({end_entity}): {relationships}")
+        assert relationships, f"No relationships ({start_entity})-[:{relation_type}]->({end_entity}) found in database."
+        return relationships[0]
 
     def parse_input(self, input_str):
         topic, concepts = input_str.split("::")
@@ -120,6 +183,7 @@ class OntologicalFeatureDetection:
 
     def build_ontology_from_compressed_data(self, input_str):
         parsed_data = self.parse_input(input_str)
+        timestamp = datetime.now().isoformat()
 
         topic = parsed_data["topic"]
         entities = [(topic, "Topic")]
@@ -131,17 +195,15 @@ class OntologicalFeatureDetection:
                 entities.append((description, "Concept"))
                 relations.append((topic, f"related_to_{index}", description))
 
-        with self.driver.session() as session:
+        with self.driver.session(database=self.database) as session:
             for entity, label in entities:
-                session.execute_write(self.add_entity, entity, label)
-
+                session.execute_write(self.add_entity, entity, label, timestamp)
             for relation in relations:
-                session.execute_write(self.add_relation, relation[0], relation[1], relation[2])
+                session.execute_write(self.add_relation, relation[0], relation[1], relation[2], timestamp)
 
         return entities, relations
 
-
-    def extract_mermaid_syntax(self, input_data, input_type="paragraph"):
+    def extract_mermaid_syntax(self, input_data, input_type="paragraph", timestamp=None):
         if input_type == "paragraph":
             entities, dependencies, srl_results = self.build_ontology_from_paragraph(input_data)
         else:
@@ -172,13 +234,66 @@ class OntologicalFeatureDetection:
                 token_id = relation[2].replace(" ", "_")
                 edges.add(f'{head_id} --> {token_id}')
 
+        if timestamp is None:
+            timestamp = datetime.now().isoformat()
+
+        entity_set.add(f'timestamp["Timestamp: {timestamp}"]')
+
         mermaid_syntax = "graph LR\n"
         for node in entity_set:
             mermaid_syntax += f"    {node}\n"
         for edge in edges:
             mermaid_syntax += f"    {edge}\n"
 
+        if entities:
+            first_entity_id = entities[0][0].replace(" ", "_")
+            mermaid_syntax += f"    timestamp --> {first_entity_id}\n"
+
         return mermaid_syntax
+
+    def get_messages_by_user(self, user_id):
+        query = """
+        MATCH (u:Entity {name: $user_id, label: 'USER'})-[:SENT]->(m:Entity {label: 'MESSAGE'})
+        RETURN m.name AS message, m.created_at AS timestamp
+        """
+        with self.driver.session(database=self.database) as neo4j_session:
+            result = neo4j_session.run(query, user_id=user_id)
+            data = [record.data() for record in result]
+            print(f"Messages by user {user_id}: {data}")
+            return data
+
+    def get_messages_by_session(self, session_id):
+        query = """
+        MATCH (s:Entity {name: $session_id, label: 'SESSION'})-[:CONTAINS]->(m:Entity {label: 'MESSAGE'})
+        RETURN m.name AS message, m.created_at AS timestamp
+        """
+        with self.driver.session(database=self.database) as neo4j_session:
+            result = neo4j_session.run(query, session_id=session_id)
+            data = [record.data() for record in result]
+            print(f"Messages by session {session_id}: {data}")
+            return data
+
+    def get_users_by_session(self, session_id):
+        query = """
+        MATCH (s:Entity {name: $session_id, label: 'SESSION'})<-[:PARTICIPATED_IN]-(u:Entity {label: 'USER'})
+        RETURN u.name AS user_id, u.created_at AS created_at
+        """
+        with self.driver.session(database=self.database) as neo4j_session:
+            result = neo4j_session.run(query, session_id=session_id)
+            data = [record.data() for record in result]
+            print(f"Users by session {session_id}: {data}")
+            return data
+
+    def get_sessions_by_user(self, user_id):
+        query = """
+        MATCH (u:Entity {name: $user_id, label: 'USER'})-[:PARTICIPATED_IN]->(s:Entity {label: 'SESSION'})
+        RETURN s.name AS session_id, s.created_at AS created_at
+        """
+        with self.driver.session(database=self.database) as neo4j_session:
+            result = neo4j_session.run(query, user_id=user_id)
+            data = [record.data() for record in result]
+            print(f"Sessions by user {user_id}: {data}")
+            return data
 
     def print_ascii(self, hierarchy, nodes, node_id, indent=0, is_last=True, prefix=""):
         node_label = nodes[node_id]
@@ -244,6 +359,7 @@ class OntologicalFeatureDetection:
             ascii_output += self.print_ascii(hierarchy, nodes, root_node)
         return ascii_output
 
+
 # Example usage
 # if __name__ == "__main__":
 #     load_dotenv()  # Load environment variables
@@ -258,17 +374,4 @@ class OntologicalFeatureDetection:
 #     paragraph = (
 #         "John, a software engineer from New York, bought a new laptop from Amazon on Saturday. "
 #         "He later met with his friend Alice, who is a data scientist at Google, for coffee at Starbucks. "
-#         "They discussed a variety of topics including the recent advancements in artificial intelligence, "
-#         "machine learning, and the future of technology. Alice suggested attending the AI conference in San Francisco next month."
-#     )
-#     mermaid_syntax_paragraph = ofd.extract_mermaid_syntax(paragraph, input_type="paragraph")
-#     print("Mermaid Syntax for Paragraph Input:")
-#     print(mermaid_syntax_paragraph)
-#
-#     # Example with semantically compressed data input
-#     compressed_data = "Theoretical Computer Science::1=field within theoretical computer science;2=inherent difficulty;3=solve computational problems;4=achievable with algorithms and computation"
-#     mermaid_syntax_compressed = ofd.extract_mermaid_syntax(compressed_data, input_type="compressed_data")
-#     print("Mermaid Syntax for Compressed Data Input:")
-#     print(mermaid_syntax_compressed)
-#
-#     ofd.close()
+#         "They discussed a variety of topics including the recent advancements in arti

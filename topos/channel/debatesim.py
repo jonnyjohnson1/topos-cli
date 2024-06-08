@@ -25,14 +25,28 @@ class DebateSimulator:
         neo4j_uri = os.getenv("NEO4J_URI")
         neo4j_user = os.getenv("NEO4J_USER")
         neo4j_password = os.getenv("NEO4J_PASSWORD")
+        self.showroom_db_name = os.getenv("NEO4J_SHOWROOM_DATABASE")
 
         # self.cache_manager = ConversationCacheManager()
-        self.ontological_feature_detection = OntologicalFeatureDetection(neo4j_uri, neo4j_user, neo4j_password)
+        self.ontological_feature_detection = OntologicalFeatureDetection(neo4j_uri, neo4j_user, neo4j_password,
+                                                                         self.showroom_db_name)
 
     def get_ontology(self, user_id, session_id, message):
         composability_string = f"for user {user_id}, of {session_id}, the message is: {message}"
         mermaid_syntax = self.ontological_feature_detection.extract_mermaid_syntax(composability_string, input_type="paragraph")
         return mermaid_syntax
+
+    def search_messages_by_user(self, user_id):
+        return self.ontological_feature_detection.get_messages_by_user(user_id)
+
+    def search_messages_by_session(self, session_id):
+        return self.ontological_feature_detection.get_messages_by_session(session_id)
+
+    def search_users_by_session(self, session_id):
+        return self.ontological_feature_detection.get_users_by_session(session_id)
+
+    def search_sessions_by_user(self, user_id):
+        return self.ontological_feature_detection.get_sessions_by_user(user_id)
 
     async def debate_step(self, websocket: WebSocket, data, app_state):
         payload = json.loads(data)
@@ -61,6 +75,8 @@ class DebateSimulator:
         print(f"[ current_ontology: {current_ontology} ]")
 
         print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
+
+        app_state.write_ontology(current_ontology)
 
         # break previous messages into ontology
         # cache ontology
