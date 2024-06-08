@@ -115,15 +115,12 @@ async def handle_client(websocket: WebSocket, session_manager: SessionManager):
                         await websocket.send_json({"error": "Invalid session ID"})
                 break
         while True:
-            print("hereere")
             data = await websocket.receive_text()
-            print("hereere111")
             if data:
                 payload = json.loads(data)
-                print(payload)
+                print("RECEIVED: ", payload)
                 session_id = payload['content']['session_id']
                 user_id = payload['content']['user_id']
-                print("111", session_id)
                 if session_id:
                     print(f"sending {session_id}")
                     await send_message_to_all(session_id, user_id, payload, session_manager)
