@@ -92,25 +92,29 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
         self.ofd.build_ontology_from_paragraph(composability_string)
 
         # Test search functions
-        messages_by_user = self.ofd.get_messages_by_user(user_id)
+        messages_by_user = self.ofd.get_messages_by_user(user_id, "SENT")
         print("Messages by User:")
         for msg in messages_by_user:
             print(msg)
+        assert messages_by_user, "No messages found for the specified user."
 
-        messages_by_session = self.ofd.get_messages_by_session(session_id)
+        messages_by_session = self.ofd.get_messages_by_session(session_id, "CONTAINS")
         print("Messages by Session:")
         for msg in messages_by_session:
             print(msg)
+        assert messages_by_session, "No messages found for the specified session."
 
-        users_by_session = self.ofd.get_users_by_session(session_id)
+        users_by_session = self.ofd.get_users_by_session(session_id, "PARTICIPATED_IN")
         print("Users by Session:")
         for user in users_by_session:
             print(user)
+        assert users_by_session, "No users found for the specified session."
 
-        sessions_by_user = self.ofd.get_sessions_by_user(user_id)
+        sessions_by_user = self.ofd.get_sessions_by_user(user_id, "PARTICIPATED_IN")
         print("Sessions by User:")
         for session in sessions_by_user:
             print(session)
+        assert sessions_by_user, "No sessions found for the specified user."
 
 
 if __name__ == "__main__":

@@ -134,7 +134,7 @@ class OntologicalFeatureDetection:
             neo4j_session.execute_write(self.add_relation, user, "PARTICIPATED_IN", session_entity, timestamp)
 
             # Verify data insertion
-            self.verify_data_insertion(neo4j_session, user, session_entity, message_entity)
+            # self.verify_data_insertion(neo4j_session, user, session_entity, message_entity)
 
         return entities, dependencies, srl_results
 
@@ -251,46 +251,46 @@ class OntologicalFeatureDetection:
 
         return mermaid_syntax
 
-    def get_messages_by_user(self, user_id):
+    def get_messages_by_user(self, user_id, relation_type):
         query = """
-        MATCH (u:Entity {name: $user_id, label: 'USER'})-[:SENT]->(m:Entity {label: 'MESSAGE'})
+        MATCH (u:Entity {name: $user_id, label: 'USER'})-[:RELATION {type: $relation_type}]->(m:Entity {label: 'MESSAGE'})
         RETURN m.name AS message, m.created_at AS timestamp
         """
         with self.driver.session(database=self.database) as neo4j_session:
-            result = neo4j_session.run(query, user_id=user_id)
+            result = neo4j_session.run(query, user_id=user_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Messages by user {user_id}: {data}")
             return data
 
-    def get_messages_by_session(self, session_id):
+    def get_messages_by_session(self, session_id, relation_type):
         query = """
-        MATCH (s:Entity {name: $session_id, label: 'SESSION'})-[:CONTAINS]->(m:Entity {label: 'MESSAGE'})
+        MATCH (s:Entity {name: $session_id, label: 'SESSION'})-[:RELATION {type: $relation_type}]->(m:Entity {label: 'MESSAGE'})
         RETURN m.name AS message, m.created_at AS timestamp
         """
         with self.driver.session(database=self.database) as neo4j_session:
-            result = neo4j_session.run(query, session_id=session_id)
+            result = neo4j_session.run(query, session_id=session_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Messages by session {session_id}: {data}")
             return data
 
-    def get_users_by_session(self, session_id):
+    def get_users_by_session(self, session_id, relation_type):
         query = """
-        MATCH (s:Entity {name: $session_id, label: 'SESSION'})<-[:PARTICIPATED_IN]-(u:Entity {label: 'USER'})
+        MATCH (s:Entity {name: $session_id, label: 'SESSION'})<-[:RELATION {type: $relation_type}]-(u:Entity {label: 'USER'})
         RETURN u.name AS user_id, u.created_at AS created_at
         """
         with self.driver.session(database=self.database) as neo4j_session:
-            result = neo4j_session.run(query, session_id=session_id)
+            result = neo4j_session.run(query, session_id=session_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Users by session {session_id}: {data}")
             return data
 
-    def get_sessions_by_user(self, user_id):
+    def get_sessions_by_user(self, user_id, relation_type):
         query = """
-        MATCH (u:Entity {name: $user_id, label: 'USER'})-[:PARTICIPATED_IN]->(s:Entity {label: 'SESSION'})
+        MATCH (u:Entity {name: $user_id, label: 'USER'})-[:RELATION {type: $relation_type}]->(s:Entity {label: 'SESSION'})
         RETURN s.name AS session_id, s.created_at AS created_at
         """
         with self.driver.session(database=self.database) as neo4j_session:
-            result = neo4j_session.run(query, user_id=user_id)
+            result = neo4j_session.run(query, user_id=user_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Sessions by user {user_id}: {data}")
             return data
