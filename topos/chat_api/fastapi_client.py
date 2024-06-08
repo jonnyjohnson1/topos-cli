@@ -1,11 +1,22 @@
-# This code almost works. It conencts to the socket, and sends, but does not receive messages.
-
 import asyncio
 import threading
 import websockets
+import json
+import random
+import string
+import datetime
 
-HOST = "127.0.0.1"
+HOST = "https://6kppfbg5ti9u.share.zrok.io"
 PORT = 13349
+
+global username
+global session_id
+
+# Generate a random 8-digit session ID
+def generate_id(length=8):
+    return ''.join(random.choices(string.digits, k=length))
+
+user_id = generate_id()
 
 async def listen_for_messages_from_server(websocket):
     try:
@@ -13,14 +24,6 @@ async def listen_for_messages_from_server(websocket):
             try:
                 message = await websocket.recv()
                 print("MESSAGE RECEIVED:", message)
-                if message:
-                    try:
-                        username, content = message.split("~", 1)
-                        print(f"[{username}] {content}")
-                    except ValueError as e:
-                        print(f"[ Error parsing message: {e} ]")
-                else:
-                    print("[ message from server is empty ]")
             except websockets.ConnectionClosed as e:
                 print(f"[ Connection closed while receiving: {e} ]")
                 break
@@ -36,7 +39,24 @@ async def send_message_to_server(websocket):
             message = input("Message: ")
             if message:
                 try:
-                    await websocket.send(message)
+                    msg = {
+                        'message_id': generate_id(),
+                        'message_type': 'user',
+                        'num_participants': 1,
+                        'content': {
+                            'user_id': user_id,
+                            'session_id': session_id,
+                            'username': username,
+                            'text': message
+                        },
+                        'timestamp': datetime.datetime.now().isoformat(),
+                        'metadata': {
+                            'priority': '',
+                            'tags': []
+                        },
+                        'attachments': [{'file_name': None, 'file_type': None, 'url': None}]
+                    }
+                    await websocket.send(json.dumps(msg))
                     print("MESSAGE SENT:", message)
                 except Exception as e:
                     print(f"[ Error sending message: {e} ]")
@@ -51,10 +71,19 @@ async def send_message_to_server(websocket):
 
 async def communicate_to_server(websocket):
     try:
+        global username, session_id
         username = input("Enter username: ")
+        session_id = input("Enter sessionId: ")
         if username:
             try:
-                await websocket.send(username)
+                msg = {
+                    'message_type': 'join_server',
+                    'user_id': user_id,
+                    'session_id': session_id,
+                    'created_at': datetime.datetime.now().isoformat(),
+                    'username': username
+                }
+                await websocket.send(json.dumps(msg))
                 print(f"USERNAME SENT: {username}")
             except Exception as e:
                 print(f"[ Error sending username: {e} ]")
@@ -63,10 +92,10 @@ async def communicate_to_server(websocket):
             await websocket.close()
             return
 
-        listen_task = asyncio.create_task(listen_for_messages_from_server(websocket))
+        # listen_task = asyncio.create_task(listen_for_messages_from_server(websocket))
         send_task = asyncio.create_task(send_message_to_server(websocket))
 
-        await asyncio.gather(listen_task, send_task)
+        await asyncio.gather(send_task) #listen_task, 
     except Exception as e:
         print(f"[ Error in communication: {e} ]")
 
@@ -80,7 +109,7 @@ def start_event_loop(loop):
 async def main():
     uri = f"ws://{HOST}:{PORT}/ws/chat"
     try:
-        async with websockets.connect(uri) as websocket:
+        async with websockets.connect(uri, ping_interval=20, ping_timeout=200) as websocket:
             print(f"[ Successfully connected to server {HOST} {PORT} ]")
             await communicate_to_server(websocket)
     except websockets.ConnectionClosed as e:
