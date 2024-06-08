@@ -207,7 +207,17 @@ async def chat(websocket: WebSocket):
 
 @router.websocket("/websocket_debate")
 async def debate(websocket: WebSocket):
-    await debate_simulator.debate(websocket, app_state)
+    app_state = {"debate": {"topic": "Unknown", "messages": []}, "user_id": "userABC", "session_id": "sessionXYZ"}
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await debate_simulator.debate_step(websocket, data, app_state)
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+    except Exception as e:
+        await websocket.send_json({"status": "error", "message": str(e)})
+        await websocket.close()
 
 
 # async def debate(websocket: WebSocket):

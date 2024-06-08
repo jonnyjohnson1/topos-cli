@@ -1,5 +1,7 @@
 # ontological_feature_detection.py
 
+import subprocess
+
 import nltk
 import spacy
 import warnings
@@ -29,8 +31,21 @@ class OntologicalFeatureDetection:
         self.tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER")
         self.model = AutoModelForTokenClassification.from_pretrained("dslim/bert-base-NER")
 
+        spacy_model_name = 'en_core_web_lg'
+
         # Load SpaCy models
-        self.nlp = spacy.load('en_core_web_sm')
+        # Ensure the SpaCy model is installed
+        try:
+            self.nlp = spacy.load(spacy_model_name)
+        except OSError:
+            print(f"SpaCy model '{spacy_model_name}' not found. Downloading...")
+            subprocess.run(["python", "-m", "spacy", "download", spacy_model_name])
+            self.nlp = spacy.load(spacy_model_name)
+
+        # Add custom entities using EntityRuler
+        ruler = self.nlp.add_pipe("entity_ruler")
+        patterns = [{"label": "USER", "pattern": "userABC"}, {"label": "SESSION", "pattern": "sessionXYZ"}]
+        ruler.add_patterns(patterns)
 
         # Initialize Neo4j connection
         self.driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
@@ -125,6 +140,7 @@ class OntologicalFeatureDetection:
 
         return entities, relations
 
+
     def extract_mermaid_syntax(self, input_data, input_type="paragraph"):
         if input_type == "paragraph":
             entities, dependencies, srl_results = self.build_ontology_from_paragraph(input_data)
@@ -164,6 +180,69 @@ class OntologicalFeatureDetection:
 
         return mermaid_syntax
 
+    def print_ascii(self, hierarchy, nodes, node_id, indent=0, is_last=True, prefix=""):
+        node_label = nodes[node_id]
+        if indent == 0:
+            output = f"{prefix}{node_label}\n"
+        else:
+            connector = "`- " if is_last else "|- "
+            output = f"{prefix}{connector}{node_label}\n"
+            prefix += "   " if is_last else "|  "
+
+        children = hierarchy.get(node_id, [])
+        for i, child in enumerate(children):
+            is_last_child = i == (len(children) - 1)
+            output += self.print_ascii(hierarchy, nodes, child, indent + 1, is_last_child, prefix)
+
+        return output
+
+    @staticmethod
+    def build_hierarchy(nodes, edges):
+        hierarchy = {}
+        for parent, child in edges:
+            if parent not in hierarchy:
+                hierarchy[parent] = []
+            hierarchy[parent].append(child)
+        return hierarchy
+
+    @staticmethod
+    def parse_mermaid(input_text):
+        lines = input_text.strip().split("\n")
+        nodes = {}
+        edges = []
+
+        for line in lines:
+            if "-->" in line:
+                parts = line.split("-->")
+                parent = parts[0].strip()
+                child = parts[1].strip()
+                edges.append((parent, child))
+                if parent not in nodes:
+                    nodes[parent] = parent
+                if child not in nodes:
+                    nodes[child] = child
+            elif "graph" not in line and "[" in line:
+                node_id, node_label = line.split("[")
+                node_label = node_label.rstrip("]").strip().strip('"')
+                nodes[node_id.strip()] = node_label
+
+        return nodes, edges
+
+    @staticmethod
+    def find_root_nodes(nodes, edges):
+        all_nodes = set(nodes.keys())
+        child_nodes = set(child for _, child in edges)
+        root_nodes = list(all_nodes - child_nodes)
+        return root_nodes
+
+    def mermaid_to_ascii(self, mermaid_input):
+        nodes, edges = self.parse_mermaid(mermaid_input)
+        hierarchy = self.build_hierarchy(nodes, edges)
+        root_nodes = self.find_root_nodes(nodes, edges)
+        ascii_output = ""
+        for root_node in root_nodes:
+            ascii_output += self.print_ascii(hierarchy, nodes, root_node)
+        return ascii_output
 
 # Example usage
 # if __name__ == "__main__":
