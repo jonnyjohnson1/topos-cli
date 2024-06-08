@@ -31,7 +31,9 @@ class DebateSimulator:
                 temperature = float(payload.get("temperature", 0.04))
                 current_topic = payload.get("topic", "Unknown")
 
-                # prior_ontology =
+                prior_ontology = app_state.get("prior_ontology", [])
+
+                current_ontology = get_ontology(user_id, session_id, message)
 
                 # break previous messages into ontology
                 # cache ontology
@@ -136,3 +138,264 @@ class DebateSimulator:
     async def think(self, topic, messages):
         # Implement the think method logic here
         pass
+
+
+
+
+
+    def simplify_message_history(self, system_prompt, message_history):
+        """
+        Simplify the message history for processing by the AI model.
+        Include the system prompt and relevant message content.
+        """
+
+        # Initialize a list to hold the simplified message history
+        # Start with the system prompt to provide context for the AI model
+        simplified_message_history = [{'role': 'system', 'content': system_prompt}]
+
+        # Loop through each message in the message history
+        for message in message_history:
+            # Extract the role and content from each message
+            simplified_message = {'role': message['role'], 'content': message['content']}
+
+            # If the message contains images and the AI model supports vision, include the images
+            if 'images' in message:
+                simplified_message['images'] = message['images']
+
+            # Append the simplified message to the simplified message history list
+            simplified_message_history.append(simplified_message)
+
+        # Return the list of simplified messages for further processing by the AI model
+        return simplified_message_history
+
+
+
+
+
+    def analyze_messages(self, messages):
+        """
+        Analyze a list of messages to identify key points, arguments, and relationships.
+
+        Parameters:
+            messages (list): A list of messages to be analyzed.
+
+        Returns:
+            dict: A structured analysis containing tokenized messages, key entities, concepts, sentiments,
+                  conceptual maps, and key points.
+        """
+
+        # Step 1: Tokenize Messages
+        # Break each message into individual tokens (words, phrases).
+        # Use a tokenizer to handle various language constructs.
+        tokenized_messages = [self.tokenize(message) for message in messages]
+
+        # Step 2: Identify Key Entities
+        # Extract key entities (e.g., people, places, organizations) from the tokenized messages.
+        # Use Named Entity Recognition (NER) models to identify these entities.
+        key_entities = [self.extract_entities(tokens) for tokens in tokenized_messages]
+
+        # Step 3: Extract Concepts
+        # Identify important concepts and themes from the messages.
+        # Use natural language processing (NLP) techniques to extract these concepts.
+        concepts = [self.extract_concepts(tokens) for tokens in tokenized_messages]
+
+        # Step 4: Determine Sentiments
+        # Analyze the sentiment (positive, negative, neutral) of each message.
+        # Use sentiment analysis models to determine the sentiment.
+        sentiments = [self.analyze_sentiment(tokens) for tokens in tokenized_messages]
+
+        # Step 5: Construct Conceptual Map
+        # Combine entities, concepts, and sentiments to create a conceptual map for each message.
+        # Represent the relationships and importance of each element.
+        conceptual_maps = [
+            self.construct_conceptual_map(entities, concepts, sentiment)
+            for entities, concepts, sentiment in zip(key_entities, concepts, sentiments)
+        ]
+
+        # Step 6: Identify Key Points and Arguments
+        # Extract the main arguments and points made in each message.
+        # Summarize the arguments in a structured format.
+        key_points = [self.extract_key_points(tokens) for tokens in tokenized_messages]
+
+        # Step 7: Return Analysis Results
+        # Compile the analyzed data into a structured format.
+        # Return the compiled analysis for further processing.
+        analysis_results = {
+            "tokenized_messages": tokenized_messages,
+            "key_entities": key_entities,
+            "concepts": concepts,
+            "sentiments": sentiments,
+            "conceptual_maps": conceptual_maps,
+            "key_points": key_points
+        }
+        return analysis_results
+
+    def tokenize(self, message):
+        # Split text into tokens, handling punctuation, whitespace, and special characters.
+        tokens = self.tokenizer.split(message)
+        return tokens
+
+    def extract_entities(self, tokens):
+        # Identify named entities using NER model.
+        entities = self.ner_model.identify(tokens)
+        return entities
+
+    def extract_concepts(self, tokens):
+        # Identify key concepts using NLP techniques.
+        concepts = self.nlp_model.extract_concepts(tokens)
+        return concepts
+
+    def analyze_sentiment(self, tokens):
+        # Determine sentiment using sentiment analysis.
+        sentiment = self.sentiment_model.analyze(tokens)
+        return sentiment
+
+    def construct_conceptual_map(self, entities, concepts, sentiment):
+        # Create a conceptual map combining entities, concepts, and sentiment.
+        conceptual_map = {
+            "entities": entities,
+            "concepts": concepts,
+            "sentiment": sentiment
+        }
+        return conceptual_map
+
+    def extract_key_points(self, tokens):
+        # Summarize the main points and arguments in the text.
+        key_points = self.summary_model.summarize(tokens)
+        return key_points
+
+    def generate_conceptual_map(self, input_data):
+        # Accept input data which includes key points and arguments identified from the messages
+        # Ensure the input data is structured properly for further processing
+
+        # Create an empty structure to hold the conceptual map
+        conceptual_map = {}
+
+        # Iterate through the input data to extract key points and arguments
+        # Identify and isolate individual points to be mapped
+        for point in input_data:
+            key_point = point["key_point"]
+            arguments = point["arguments"]
+
+            # Initialize lists to store related points and relationship types
+            related_points = []
+            relationship_types = []
+
+            # For each key point, determine the relationships and connections to other points
+            # Categorize these relationships (e.g., causal, conceptual, supporting, opposing)
+            for argument in arguments:
+                related_point = argument["related_point"]
+                relationship_type = argument["relationship_type"]
+
+                # Append the related points and relationship types to their respective lists
+                related_points.append(related_point)
+                relationship_types.append(relationship_type)
+
+            # Add the identified relationships to the conceptual map structure
+            # Ensure that each relationship is accurately represented and connected
+            conceptual_map[key_point] = {
+                "related_points": related_points,
+                "relationships": relationship_types
+            }
+
+        # Check the conceptual map for consistency and completeness
+        # Ensure that all key points and relationships are properly mapped
+        self.validate_conceptual_map(conceptual_map)
+
+        # Provide the finalized conceptual map for further processing or analysis
+        # Ensure the conceptual map is in a format that can be easily used by subsequent functions
+        return conceptual_map
+
+    def validate_conceptual_map(self, conceptual_map):
+        # Start the validation process to check the consistency and completeness of the conceptual map
+
+        # Ensure the conceptual map is not empty
+        if not conceptual_map:
+            raise ValueError("Conceptual map is empty.")
+
+        # Loop through each key point in the conceptual map to validate its structure and relationships
+        for key_point, details in conceptual_map.items():
+
+            # Check that each key point has associated related points and relationship types
+            related_points = details.get("related_points", [])
+            relationship_types = details.get("relationships", [])
+
+            # Ensure that the number of related points matches the number of relationship types
+            if len(related_points) != len(relationship_types):
+                raise ValueError(
+                    f"Inconsistent data for key point {key_point}: number of related points does not match number of relationships.")
+
+            # Ensure that no key point references itself as a related point to avoid circular references
+            if key_point in related_points:
+                raise ValueError(f"Self-referencing point detected for key point {key_point}.")
+
+            # Verify that all relationship types are valid and predefined
+            valid_relationship_types = {"causal", "conceptual", "supporting", "opposing"}
+            for relationship in relationship_types:
+                if relationship not in valid_relationship_types:
+                    raise ValueError(f"Invalid relationship type {relationship} for key point {key_point}.")
+
+            # Ensure that all related points exist within the conceptual map
+            for related_point in related_points:
+                if related_point not in conceptual_map:
+                    raise ValueError(
+                        f"Related point {related_point} for key point {key_point} does not exist in the conceptual map.")
+
+        # Finish the validation process after all checks have been passed
+        # If all checks are passed, the conceptual map is considered valid
+        return True
+
+
+
+
+    def identify_relationships(self, conceptual_map):
+        """
+        Identify causal and conceptual relationships between points in the conceptual map.
+        """
+
+        # Extract key points and arguments from the conceptual map
+        key_points = self.extract_key_points(conceptual_map)
+
+        # Initialize a data structure to store identified relationships
+        relationships = self.initialize_relationship_structure()
+
+        # Determine cause-and-effect links between points
+        for point in key_points:
+            for other_point in key_points:
+                if point != other_point:
+                    causal_relationship = self.analyze_causal_relationship(point, other_point)
+                    if causal_relationship:
+                        # Add the causal relationship to the structure
+                        relationships.add_causal_relationship(point, other_point, causal_relationship)
+
+        # Identify temporal sequences between points
+        for point in key_points:
+            for other_point in key_points:
+                if point != other_point:
+                    temporal_relationship = self.analyze_temporal_relationship(point, other_point)
+                    if temporal_relationship:
+                        # Add the temporal relationship to the structure
+                        relationships.add_temporal_relationship(point, other_point, temporal_relationship)
+
+        # Find conceptual links and similarities between points
+        for point in key_points:
+            for other_point in key_points:
+                if point != other_point:
+                    conceptual_relationship = self.analyze_conceptual_relationship(point, other_point)
+                    if conceptual_relationship:
+                        # Add the conceptual relationship to the structure
+                        relationships.add_conceptual_relationship(point, other_point, conceptual_relationship)
+
+        # Validate identified relationships
+        relationships = self.validate_relationships(relationships)
+
+        # Return the structured relationships for further processing
+        return relationships
+
+
+
+#alright! once again, same style, same acumen, boil over each and every one of those
+
+#okay compose it all in a series of functions so I can copy paste.
+
+#AFTERWARDS I'd like a list of all of the new functions you need to yet provide super-stubs for
