@@ -16,6 +16,9 @@ router = APIRouter()
 from topos.FC.conversation_cache_manager import ConversationCacheManager
 
 
+
+
+
 @router.websocket("/websocket_chat")
 async def chat(websocket: WebSocket):
     await websocket.accept()
@@ -212,9 +215,39 @@ async def debate(websocket: WebSocket):
             temperature = float(payload.get("temperature", 0.04))
             current_topic = payload.get("topic", "Unknown")
 
+            # topic:
+            # checkers is better than chess
+
+            # user1:
+            # [user1] chess is better than checkers
+
+            # user2:
+            # [user2] no, checkers is better than chess - it's faster
+
+            # user1:
+            # [user1]  I don't believe so - checkers always takes at least a large fixed time to perform moves, and chess can mate in less than 10 if you're good
+
+            # user2:
+            # [user2]  but checkers is more accessible to a wider audience, and it's easier to learn
+
+            # user1:
+            # [user1]  that's true, but chess has a richer history and more complex strategies
+
+            # user2:
+            # [user2]  but checkers is more fun to play, and it's more engaging
+
             # Set system prompt
             has_topic = False
             system_prompt = f""
+
+            user_definition_prompt = f"""-----
+                                        Users are defined by the following roles: user1, user2, user3, etc. The moderator is defined by the role: moderator.\n
+                                        Roles are indicated by the format:
+                                        [user1]: "I have an opinion on XYZ"
+                                        [user2]: "I have another opinion on ABC"
+                                        [moderator]: "I think the topic might be XYZ" 
+                                        ------
+                                        """
             
             if current_topic == "unknown topic":
                 system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style, in the format of:\n
@@ -223,7 +256,9 @@ async def debate(websocket: WebSocket):
                 has_topic = True
                 system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n
                                 You keep track of who is speaking, in the context of saying out loud every round:\n
-                                {{\"role\":\"moderator\", \"content\":\"The topic is...(_insert name of topic here!_)\", "affirmative_negative score": "(_insert affirmative or negative score, -10 to +10, here!_)"}}"""
+                                {{\"role\": \"moderator\", \"content\": \"The topic is...(_insert name of topic here!_)\", \"synopsis\": \"(_insert synopsis of the content so far, with debaters points in abstract_)\", \"affirmative_negative score\": \"(_insert debate affirmative (is affirming the premise of the current \'topic\') score, 1 to 10, here!_) / (_insert debate negative (is not affirming the premise of the current "topic", and is correlated to the inverse of the statement) score, 1 to 10, here!_)\"}}"""
+
+            system_prompt = f"{user_definition_prompt}\n{system_prompt}"
 
             user_prompt = f""
             if message_history:
