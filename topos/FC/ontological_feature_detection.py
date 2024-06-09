@@ -296,7 +296,7 @@ class OntologicalFeatureDetection:
             neo4j_session.execute_write(_store_ontology)
 
             # Verify data insertion
-            self.verify_data_insertion(user_id, session_id, message_id, message, timestamp, context_entities)
+            # self.verify_data_insertion(user_id, session_id, message_id, message, timestamp, context_entities)
 
     def verify_data_insertion(self, user_id, session_id, message_id, message, timestamp, context_entities):
         with self.app_state.get_driver_session() as neo4j_session:
