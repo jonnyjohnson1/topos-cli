@@ -17,6 +17,52 @@ from topos.FC.conversation_cache_manager import ConversationCacheManager
 from topos.FC.semantic_compression import SemanticCompression
 from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
 
+# chess is more complicated than checkers but less complicated than go
+
+# current:
+# graph LR
+#     timestamp["Timestamp: 2024-06-08T23:47:36.059626"]
+#     user["user (USER)"]
+#     sessionTEMP["sessionTEMP (SESSION)"]
+#     userPRIME["userPRIME (USER)"]
+#     than --> checkers
+#     sessionTEMP --> of
+#     checkers --> complicated
+#     message --> is
+#     userPRIME --> for
+#     is --> chess
+#     is --> message
+#     checkers --> than
+#     of --> sessionTEMP
+#     chess --> is
+#     for --> userPRIME
+#     complicated --> is
+#     timestamp --> user
+
+# target:
+# graph LR
+#     userPRIME["userPRIME (USER)"]
+#     sessionTEMP["sessionTEMP (SESSION)"]
+#     timestamp["Timestamp: 2024-06-08T23:18:05.206590"]
+#     message["message"]
+#     chess["chess"]
+#     more_complicated["more complicated"]
+#     checkers["checkers"]
+#     less_complicated["less complicated"]
+#     go["go"]
+#
+#     userPRIME --> user
+#     sessionTEMP --> session
+#     timestamp --> user
+#     message --> userPRIME
+#     message --> sessionTEMP
+#     message --> timestamp
+#     chess --> message
+#     more_complicated --> chess
+#     more_complicated --> checkers
+#     less_complicated --> chess
+#     less_complicated --> go
+
 
 class DebateSimulator:
     def __init__(self):
