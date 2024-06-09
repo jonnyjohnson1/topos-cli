@@ -79,13 +79,14 @@ class DebateSimulator:
 
     def get_ontology(self, user_id, session_id, message):
         composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
+        print(f"\t\t[ composable_string :: {composable_string} ]")
 
-        entities, pos_tags, dependencies, relations, srl_results, timestamp = self.ontological_feature_detection.build_ontology_from_paragraph(
-            composable_string)
+        entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ontological_feature_detection.build_ontology_from_paragraph(
+            user_id, session_id, composable_string)
 
-        input_components = entities, dependencies, relations, srl_results, timestamp
+        self.ontological_feature_detection.store_ontology(user_id, session_id, message, timestamp, context_entities)
 
-        self.ontological_feature_detection.store_ontology(user_id, session_id, message, timestamp)
+        input_components = entities, dependencies, relations, srl_results, timestamp, context_entities
 
         mermaid_syntax = self.ontological_feature_detection.extract_mermaid_syntax(input_components, input_type="components")
         return mermaid_syntax

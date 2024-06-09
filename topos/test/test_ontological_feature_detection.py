@@ -91,11 +91,12 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
         print(mermaid_syntax)
 
         # Insert test data into Neo4j
-        entities, pos_tags, dependencies, relations, srl_results, timestamp = self.ofd.build_ontology_from_paragraph(composable_string)
+        entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ofd.build_ontology_from_paragraph(
+            user_id, session_id, composable_string)
 
         message = composable_string
 
-        self.ofd.store_ontology(user_id, session_id, message, timestamp)
+        self.ofd.store_ontology(user_id, session_id, message, timestamp, context_entities)
 
         # Test search functions
         messages_by_user = self.ofd.get_messages_by_user(user_id, "SENT")

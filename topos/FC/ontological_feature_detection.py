@@ -56,6 +56,10 @@ class OntologicalFeatureDetection:
 
     def perform_ner(self, text):
         doc = self.nlp(text)
+
+        for token in doc:
+            print(f"{token.text}: {token.pos_}")
+
         entities = [(ent.text, ent.label_) for ent in doc.ents]
         print(f"NER results: {entities}")
         return entities
@@ -73,17 +77,13 @@ class OntologicalFeatureDetection:
         return dependencies
 
     def perform_srl(self, text):
-        # Parse the input text to extract dependencies
         doc = self.nlp(text)
-        # Initialize an empty list to store the SRL results
         srl_results = []
 
-        # Extract entities and their roles
         for token in doc:
             if token.dep_ in ("nsubj", "dobj", "pobj"):
                 srl_results.append({"entity": token.head.text, "role": token.dep_.upper(), "word": token.text})
 
-        # Identify comparative structures and their entities
         for token in doc:
             if token.dep_ == "acomp" and token.head.pos_ in ["VERB", "AUX"]:
                 comparative = {"entity": token.head.text, "role": "COMPARATIVE", "word": token.text}
@@ -92,17 +92,17 @@ class OntologicalFeatureDetection:
                     if child.dep_ == "prep" and child.text == "than":
                         for grandchild in child.children:
                             if grandchild.dep_ == "pobj":
-                                srl_results.append({"entity": token.text, "role": "COMPARATIVE_ENTITY", "word": grandchild.text})
+                                srl_results.append(
+                                    {"entity": token.text, "role": "MORE_COMPLICATED", "word": token.head.text})
+                                srl_results.append(
+                                    {"entity": token.text, "role": "MORE_COMPLICATED", "word": grandchild.text})
+                                srl_results.append(
+                                    {"entity": grandchild.text, "role": "LESS_COMPLICATED", "word": token.head.text})
 
-        # Handle second comparative structure separately
         for token in doc:
-            if token.dep_ in ["advmod", "cc"] and token.head.dep_ == "acomp":
-                for child in token.children:
-                    if child.dep_ == "prep" and child.text == "than":
-                        for grandchild in child.children:
-                            if grandchild.dep_ == "pobj":
-                                srl_results.append({"entity": token.head.text, "role": "COMPARATIVE", "word": token.text})
-                                srl_results.append({"entity": token.text, "role": "COMPARATIVE_ENTITY", "word": grandchild.text})
+            if token.dep_ in ["nsubj", "dobj", "pobj"]:
+                if token.head.pos_ == "NOUN":
+                    srl_results.append({"entity": token.head.text, "role": "RELATED_TO", "word": token.text})
 
         return srl_results
 
@@ -248,7 +248,7 @@ class OntologicalFeatureDetection:
 
         # print(f"Relationship created: ({entity1})-[:{relation}]->({entity2}) at {timestamp}")
 
-    def build_ontology_from_paragraph(self, text):
+    def build_ontology_from_paragraph(self, user_id, session_id, text):
         print(f"Processing text for ontology: {text}")
         entities = self.perform_ner(text)
         pos_tags = self.perform_pos_tagging(text)
@@ -257,14 +257,16 @@ class OntologicalFeatureDetection:
         relations = self.perform_relation_extraction(text)
         timestamp = datetime.now().isoformat()
 
-        return entities, pos_tags, dependencies, relations, srl_results, timestamp
+        context_entities = [(user_id, "USER"), (session_id, "SESSION")]
 
-    def store_ontology(self, user_id, session_id, message, timestamp):
+        return entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities
+
+    def store_ontology(self, user_id, session_id, message, timestamp, context_entities):
         message_entity = message.replace(" ", "_")
         with self.app_state.get_driver_session() as neo4j_session:
-            # Insert user and session entities
-            neo4j_session.execute_write(self.add_entity, user_id, "USER", timestamp)
-            neo4j_session.execute_write(self.add_entity, session_id, "SESSION", timestamp)
+            # Insert context entities
+            for entity, label in context_entities:
+                neo4j_session.execute_write(self.add_entity, entity, label, timestamp)
 
             # Insert message entity
             neo4j_session.execute_write(self.add_entity, message_entity, "MESSAGE", timestamp)
@@ -347,9 +349,10 @@ class OntologicalFeatureDetection:
 
     def extract_mermaid_syntax(self, input_data, input_type="paragraph", timestamp=None):
         if input_type == "paragraph":
-            entities, pos_tags, dependencies, relations, srl_results, timestamp = self.build_ontology_from_paragraph(input_data)
+            entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.build_ontology_from_paragraph(
+                "user_unknown", "session_unknown", input_data)
         elif input_type == "components":
-            entities, dependencies, relations, srl_results, timestamp = input_data
+            entities, dependencies, relations, srl_results, timestamp, context_entities = input_data
         else:
             entities, relations = self.build_ontology_from_compressed_data(input_data)
 
@@ -362,7 +365,7 @@ class OntologicalFeatureDetection:
 
         if input_type == "paragraph" or input_type == "components":
             for token, dep, head in dependencies:
-                if dep in ["nsubj", "dobj", "pobj"]:  # Simplified dependency types
+                if dep in ["nsubj", "dobj", "pobj"]:
                     token_id = token.replace(" ", "_")
                     head_id = head.replace(" ", "_")
                     edges.add(f'{head_id} --> {token_id}')
@@ -371,8 +374,14 @@ class OntologicalFeatureDetection:
                 if 'entity' in result and 'word' in result:
                     entity = result['word'].replace(" ", "_")
                     srl_entity = result["entity"].replace(" ", "_")
-                    edges.add(f'{entity} --> {srl_entity}')
-        else:
+                    role = result["role"]
+
+                    if role in ["MORE_COMPLICATED", "LESS_COMPLICATED"]:
+                        edges.add(f'{role.lower()} --> {entity}')
+                        edges.add(f'{role.lower()} --> {srl_entity}')
+                    elif role == "RELATED_TO":
+                        edges.add(f'{entity} --> {srl_entity}')
+
             for relation in relations:
                 head_id = relation[0].replace(" ", "_")
                 token_id = relation[2].replace(" ", "_")
@@ -384,14 +393,29 @@ class OntologicalFeatureDetection:
         entity_set.add(f'timestamp["Timestamp: {timestamp}"]')
 
         mermaid_syntax = "graph LR\n"
-        for node in entity_set:
+        for node in sorted(entity_set):
             mermaid_syntax += f"    {node}\n"
-        for edge in edges:
-            mermaid_syntax += f"    {edge}\n"
 
-        if entities:
-            first_entity_id = entities[0][0].replace(" ", "_")
-            mermaid_syntax += f"    timestamp --> {first_entity_id}\n"
+        if context_entities:
+            user_entity = next((entity for entity, label in context_entities if label == "USER"), None)
+            session_entity = next((entity for entity, label in context_entities if label == "SESSION"), None)
+            if user_entity and session_entity:
+                user_entity_id = user_entity.replace(" ", "_")
+                session_entity_id = session_entity.replace(" ", "_")
+                mermaid_syntax += f"    {user_entity_id}[\"{user_entity_id} (USER)\"]\n"
+                mermaid_syntax += f"    {session_entity_id}[\"{session_entity_id} (SESSION)\"]\n"
+                mermaid_syntax += f"    {user_entity_id} --> {session_entity_id}\n"
+                mermaid_syntax += f"    timestamp --> {user_entity_id}\n"
+
+        message_entity = next((entity for entity, label in entities if label == "MESSAGE"), None)
+        if message_entity:
+            message_entity_id = message_entity.replace(" ", "_")
+            mermaid_syntax += f"    {message_entity_id} --> {user_entity_id}\n"
+            mermaid_syntax += f"    {message_entity_id} --> {session_entity_id}\n"
+            mermaid_syntax += f"    {message_entity_id} --> timestamp\n"
+
+        for edge in sorted(edges):
+            mermaid_syntax += f"    {edge}\n"
 
         return mermaid_syntax
 
