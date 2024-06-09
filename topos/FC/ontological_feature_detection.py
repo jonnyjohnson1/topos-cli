@@ -269,20 +269,13 @@ class OntologicalFeatureDetection:
         with self.app_state.get_driver_session() as neo4j_session:
             def _store_ontology(tx):
                 # Insert message entity with properties
-                print(f"Inserting message entity: ({message_id})")
+                print(f"[ user_id :: {user_id} :: session_id :: {session_id} :: message :: {message} ]")
+                print(f"Inserting message entity: {message_id} with content: {message} and timestamp: {timestamp}")
                 self.add_entity(tx, message_id, "MESSAGE", {"content": message, "timestamp": timestamp})
-
-                # Create relationships between user, session, and message
-                print(f"Creating relationship: ({user_id})-[:SENT]->({message_id})")
-                self.add_relation(tx, user_id, "SENT", message_id, {"timestamp": timestamp})
-                print(f"Creating relationship: ({session_id})-[:CONTAINS]->({message_id})")
-                self.add_relation(tx, session_id, "CONTAINS", message_id, {"timestamp": timestamp})
-                print(f"Creating relationship: ({user_id})-[:PARTICIPATED_IN]->({session_id})")
-                self.add_relation(tx, user_id, "PARTICIPATED_IN", session_id, {"timestamp": timestamp})
 
                 # Insert context entities and create relationships with the message
                 for entity, label in context_entities:
-                    print(f"Inserting context entity: ({entity})")
+                    print(f"Inserting context entity: ({entity}) with label: {label}")
                     self.add_entity(tx, entity, label, {"timestamp": timestamp})
                     print(f"Creating relationship: ({message_id})-[:HAS_ENTITY]->({entity})")
                     self.add_relation(tx, message_id, "HAS_ENTITY", entity, {"timestamp": timestamp})
@@ -292,10 +285,18 @@ class OntologicalFeatureDetection:
                     print(f"Creating relationship: ({subject})-[:{relation}]->({object_})")
                     self.add_relation(tx, subject, relation, object_, {"timestamp": timestamp})
 
+                # Create relationships between user, session, and message
+                print(f"Creating relationship: ({user_id})-[:SENT]->({message_id})")
+                self.add_relation(tx, user_id, "SENT", message_id, {"timestamp": timestamp})
+                print(f"Creating relationship: ({session_id})-[:CONTAINS]->({message_id})")
+                self.add_relation(tx, session_id, "CONTAINS", message_id, {"timestamp": timestamp})
+                print(f"Creating relationship: ({user_id})-[:PARTICIPATED_IN]->({session_id})")
+                self.add_relation(tx, user_id, "PARTICIPATED_IN", session_id, {"timestamp": timestamp})
+
             neo4j_session.execute_write(_store_ontology)
 
-        # Verify data insertion
-        self.verify_data_insertion(user_id, session_id, message_id, message, timestamp, context_entities)
+            # Verify data insertion
+            self.verify_data_insertion(user_id, session_id, message_id, message, timestamp, context_entities)
 
     def verify_data_insertion(self, user_id, session_id, message_id, message, timestamp, context_entities):
         with self.app_state.get_driver_session() as neo4j_session:
@@ -306,40 +307,40 @@ class OntologicalFeatureDetection:
                 message_id=message_id
             )
             message_data = result.single()
+            assert message_data, f"Message with ID {message_id} not found."
             assert message_data["message"] == message, f"Expected message: {message}, got: {message_data['message']}"
             assert message_data[
                        "timestamp"] == timestamp, f"Expected timestamp: {timestamp}, got: {message_data['timestamp']}"
             print("Message content and timestamp verified.")
 
             # Retrieve user_id
+            print(f"Verifying user for message_id: {message_id}")
             result = neo4j_session.run(
-                "MATCH (m:MESSAGE {id: $message_id})<-[:SENT]-(u:USER) "
+                "MATCH (u:USER)-[:SENT]->(m:MESSAGE {id: $message_id}) "
                 "RETURN u.id AS user_id",
                 message_id=message_id
             )
             record = result.single()
-            if record:
-                retrieved_user_id = record["user_id"]
-                assert retrieved_user_id == user_id, f"Expected user_id: {user_id}, got: {retrieved_user_id}"
-                print("User ID verified.")
-            else:
-                print(f"No user found for message_id: {message_id}")
+            assert record, f"No user found for message_id: {message_id}"
+            retrieved_user_id = record["user_id"]
+            assert retrieved_user_id == user_id, f"Expected user_id: {user_id}, got: {retrieved_user_id}"
+            print("User ID verified.")
 
             # Retrieve session_id
+            print(f"Verifying session for message_id: {message_id}")
             result = neo4j_session.run(
-                "MATCH (m:MESSAGE {id: $message_id})<-[:CONTAINS]-(s:SESSION) "
+                "MATCH (s:SESSION)-[:CONTAINS]->(m:MESSAGE {id: $message_id}) "
                 "RETURN s.id AS session_id",
                 message_id=message_id
             )
             record = result.single()
-            if record:
-                retrieved_session_id = record["session_id"]
-                assert retrieved_session_id == session_id, f"Expected session_id: {session_id}, got: {retrieved_session_id}"
-                print("Session ID verified.")
-            else:
-                print(f"No session found for message_id: {message_id}")
+            assert record, f"No session found for message_id: {message_id}"
+            retrieved_session_id = record["session_id"]
+            assert retrieved_session_id == session_id, f"Expected session_id: {session_id}, got: {retrieved_session_id}"
+            print("Session ID verified.")
 
             # Retrieve context entities
+            print(f"Verifying context entities for message_id: {message_id}")
             result = neo4j_session.run(
                 "MATCH (m:MESSAGE {id: $message_id})-[:HAS_ENTITY]->(e) "
                 "RETURN e.id AS entity, labels(e) AS labels",
@@ -377,9 +378,10 @@ class OntologicalFeatureDetection:
 
         with self.app_state.get_driver_session() as session:
             for entity, label in entities:
-                session.execute_write(self.add_entity, entity, label, timestamp)
+                session.execute_write(self.add_entity, entity, label, {"timestamp": timestamp})
             for relation in relations:
-                session.execute_write(self.add_relation, relation[0], relation[1], relation[2], timestamp)
+                session.execute_write(self.add_relation, relation[0], relation[1], relation[2],
+                                      {"timestamp": timestamp})
 
         return entities, relations
 
@@ -437,57 +439,60 @@ class OntologicalFeatureDetection:
 
     def get_messages_by_user(self, user_id, relation_type):
         query = """
-        MATCH (u:Entity {name: $user_id, label: 'USER'})-[:RELATION {type: $relation_type}]->(m:Entity {label: 'MESSAGE'})
-        RETURN m.name AS message, m.created_at AS timestamp
+        MATCH (u:USER {id: $user_id})-[r:{relation_type}]->(m:MESSAGE)
+        RETURN m.id AS message_id, m.content AS message, m.timestamp AS timestamp
         """
+        query = query.replace("{relation_type}", relation_type)
         with self.app_state.get_driver_session() as neo4j_session:
-            result = neo4j_session.run(query, user_id=user_id, relation_type=relation_type)
+            result = neo4j_session.run(query, user_id=user_id)
             data = [record.data() for record in result]
             print(f"Messages by user {user_id}: {data}")
             return data
 
     def get_messages_by_session(self, session_id, relation_type):
         query = """
-        MATCH (s:Entity {name: $session_id, label: 'SESSION'})-[:RELATION {type: $relation_type}]->(m:Entity {label: 'MESSAGE'})
-        RETURN m.name AS message, m.created_at AS timestamp
+        MATCH (s:SESSION {id: $session_id})-[r:CONTAINS]->(m:MESSAGE)
+        RETURN m.id AS message_id, m.content AS message, m.timestamp AS timestamp
         """
         with self.app_state.get_driver_session() as neo4j_session:
-            result = neo4j_session.run(query, session_id=session_id, relation_type=relation_type)
+            result = neo4j_session.run(query, session_id=session_id)
             data = [record.data() for record in result]
             print(f"Messages by session {session_id}: {data}")
             return data
 
     def get_users_by_session(self, session_id, relation_type):
         query = """
-        MATCH (s:Entity {name: $session_id, label: 'SESSION'})<-[:RELATION {type: $relation_type}]-(u:Entity {label: 'USER'})
-        RETURN u.name AS user_id, u.created_at AS created_at
+        MATCH (s:SESSION {id: $session_id})<-[r:PARTICIPATED_IN]-(u:USER)
+        RETURN u.id AS user_id
         """
         with self.app_state.get_driver_session() as neo4j_session:
-            result = neo4j_session.run(query, session_id=session_id, relation_type=relation_type)
+            result = neo4j_session.run(query, session_id=session_id)
             data = [record.data() for record in result]
             print(f"Users by session {session_id}: {data}")
             return data
 
     def get_sessions_by_user(self, user_id, relation_type):
         query = """
-        MATCH (u:Entity {name: $user_id, label: 'USER'})-[:RELATION {type: $relation_type}]->(s:Entity {label: 'SESSION'})
-        RETURN s.name AS session_id, s.created_at AS created_at
+        MATCH (u:USER {id: $user_id})-[r:PARTICIPATED_IN]->(s:SESSION)
+        RETURN s.id AS session_id
         """
         with self.app_state.get_driver_session() as neo4j_session:
-            result = neo4j_session.run(query, user_id=user_id, relation_type=relation_type)
+            result = neo4j_session.run(query, user_id=user_id)
             data = [record.data() for record in result]
             print(f"Sessions by user {user_id}: {data}")
             return data
 
     def get_message_by_id(self, message_id):
         query = """
-        MATCH (m:Entity {name: $message_id, label: 'MESSAGE'})
-        RETURN m.name AS message_id, m.created_at AS timestamp
+        MATCH (m:MESSAGE {id: $message_id})
+        RETURN m.content AS message, m.timestamp AS timestamp
         """
         with self.app_state.get_driver_session() as neo4j_session:
             result = neo4j_session.run(query, message_id=message_id)
             data = [record.data() for record in result]
-            print(f"Message {message_id}: {data}")
+            print(f"Query executed: {query}")
+            print(f"Parameters: message_id={message_id}")
+            print(f"Query result: {data}")
             return data
 
     @staticmethod

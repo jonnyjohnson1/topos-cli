@@ -154,6 +154,13 @@ class DebateSimulator:
 
         await self.think(topic="Chess vs Checkers", messages=message_history)
 
+
+        # topic3:
+        # a hat is worn by a person, who has an edge in a meeting due to wearing the hat
+
+        # topic2:
+        # I think larger nuclear reactors are better than smaller ones
+
         # topic:
         # checkers is better than chess
         #

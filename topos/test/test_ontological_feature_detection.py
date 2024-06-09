@@ -1,11 +1,10 @@
-# test_ontological_feature_detection.py
-
 import os
 import unittest
 from datetime import datetime
 from topos.services.database.app_state import AppState, Neo4jConnection
 from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
 from dotenv import load_dotenv
+from uuid import uuid4
 
 
 class TestOntologicalFeatureDetection(unittest.TestCase):
@@ -49,15 +48,6 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
             session.run("MATCH (n) DETACH DELETE n")
 
     def test_ontological_detection(self):
-        load_dotenv()  # Load environment variables
-
-        neo4j_uri = os.getenv("NEO4J_URI")
-        neo4j_user = os.getenv("NEO4J_USER")
-        neo4j_password = os.getenv("NEO4J_PASSWORD")
-        neo4j_test_database = os.getenv("NEO4J_TEST_DATABASE")
-
-        ofd = OntologicalFeatureDetection(neo4j_uri, neo4j_user, neo4j_password, neo4j_test_database)
-
         # Example with paragraph input
         paragraph = (
             "John, a software engineer from New York, bought a new laptop from Amazon on Saturday. "
@@ -65,39 +55,31 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
             "They discussed a variety of topics including the recent advancements in artificial intelligence, "
             "machine learning, and the future of technology. Alice suggested attending the AI conference in San Francisco next month."
         )
-        mermaid_syntax_paragraph = ofd.extract_mermaid_syntax(paragraph, input_type="paragraph")
+        mermaid_syntax_paragraph = self.ofd.extract_mermaid_syntax(paragraph, input_type="paragraph")
         print("Mermaid Syntax for Paragraph Input:")
         print(mermaid_syntax_paragraph)
 
         # Example with semantically compressed data input
         compressed_data = "Theoretical Computer Science::1=field within theoretical computer science;2=inherent difficulty;3=solve computational problems;4=achievable with algorithms and computation"
-        mermaid_syntax_compressed = ofd.extract_mermaid_syntax(compressed_data, input_type="compressed_data")
+        mermaid_syntax_compressed = self.ofd.extract_mermaid_syntax(compressed_data, input_type="compressed_data")
         print("Mermaid Syntax for Compressed Data Input:")
         print(mermaid_syntax_compressed)
 
     def test_timestamp_and_accessors(self):
-        user_id = "userRAM"
-        session_id = "sessionZIP"
-        message_id = "messageTAR"
-        message = "Hello, this is a test message!"
+        user_id = f"user_{str(uuid4())}"
+        session_id = f"session_{str(uuid4())}"
+        message_id = f"message_{str(uuid4())}"
+        message = "This is a test message for unit testing."
 
         # Extract the current timestamp
         timestamp = datetime.now().isoformat()
 
         # Create and test the ontology extraction with timestamp
         composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
-        mermaid_syntax = self.ofd.extract_mermaid_syntax(composable_string, input_type="paragraph",
-                                                         timestamp=timestamp)
-        print("Mermaid Syntax with Timestamp:")
-        print(mermaid_syntax)
-
-        # Insert test data into Neo4j
         entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ofd.build_ontology_from_paragraph(
             user_id, session_id, message_id, composable_string)
 
-        message = composable_string
-
-        self.ofd.store_ontology(user_id, session_id, message, timestamp, context_entities)
+        self.ofd.store_ontology(user_id, session_id, message_id, message, timestamp, context_entities, relations)
 
         # Test search functions
         messages_by_user = self.ofd.get_messages_by_user(user_id, "SENT")
@@ -125,9 +107,9 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
         assert sessions_by_user, "No sessions found for the specified user."
 
     def test_get_message_by_id(self):
-        user_id = "user_test"
-        session_id = "session_test"
-        message_id = "message_test"
+        user_id = f"user_{str(uuid4())}"
+        session_id = f"session_{str(uuid4())}"
+        message_id = f"message_{str(uuid4())}"
         message_content = "This is a test message for unit testing."
 
         # Extract the current timestamp
@@ -137,13 +119,15 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
         entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ofd.build_ontology_from_paragraph(
             user_id, session_id, message_id, message_content)
 
-        self.ofd.store_ontology(user_id, session_id, message_content, timestamp, context_entities)
+        print(f"Storing ontology for message: {message_content} with ID: {message_id}")
+        self.ofd.store_ontology(user_id, session_id, message_id, message_content, timestamp, context_entities,
+                                relations)
 
         # Retrieve the message by ID and verify the result
         result = self.ofd.get_message_by_id(message_id)
         print("Message by ID:", result)
         self.assertEqual(len(result), 1, "Message not found in the database.")
-        self.assertEqual(result[0]["message_id"], message_id, "Incorrect message ID.")
+        self.assertEqual(result[0]["message"], message_content, "Incorrect message content.")
         self.assertEqual(result[0]["timestamp"], timestamp, "Incorrect timestamp.")
 
 
