@@ -130,68 +130,45 @@ class OntologicalFeatureDetection:
                     srl_results.append(
                         {"entity": compared_entities[i], "role": "MORE_COMPLICATED", "word": comparative})
 
+        print(f"\t[ SRL results: {srl_results} ]")
+
         return srl_results
 
-    def perform_relation_extraction(self, text):
-        doc = self.nlp(text)
+    def perform_relation_extraction(self, text, srl_results):
         relations = []
+        entities = set()
 
-        for token in doc:
-            if token.dep_ in ("nsubj", "dobj") and token.head.pos_ == "VERB":
-                subject = None
-                object_ = None
-                verb = token.head.text
+        comparative_adjective = None
+        subject = None
+        more_complicated = []
+        less_complicated = []
 
-                if token.dep_ == "nsubj":
-                    subject = token.text
-                    for child in token.head.children:
-                        if child.dep_ in ("dobj", "pobj"):
-                            object_ = child.text
-                            relations.append((subject, verb, object_))
+        for result in srl_results:
+            if result['role'] == 'COMPARATIVE':
+                comparative_adjective = result['word']
+            elif result['role'] == 'SUBJECT' and result['entity'] != 'message':
+                subject = result['entity']
+                entities.add(subject)
+            elif result['role'] == 'MORE_COMPLICATED':
+                more_complicated.append(result['entity'])
+                entities.add(result['entity'])
+            elif result['role'] == 'LESS_COMPLICATED':
+                less_complicated.append(result['entity'])
+                entities.add(result['entity'])
 
-                elif token.dep_ == "dobj":
-                    object_ = token.text
-                    for child in token.head.children:
-                        if child.dep_ == "nsubj":
-                            subject = child.text
-                            relations.append((subject, verb, object_))
+        if comparative_adjective and subject:
+            relation_type = f"{comparative_adjective}_than"
+            for entity in less_complicated:
+                if entity != subject:
+                    relations.append((subject, relation_type, entity))
+            for entity in more_complicated:
+                if entity != subject:
+                    relations.append((entity, relation_type, subject))
 
-            if token.dep_ == "acomp" and token.head.pos_ in ("VERB", "AUX"):
-                comparative_adjective = token.text
-                verb = token.head.text
-                subject = None
-                comparative_object = None
+        print(f"\t[ Relation extraction results: {relations} :: {entities} ]")
 
-                for child in token.head.children:
-                    if child.dep_ == "nsubj":
-                        subject = child.text
+        return relations, list(entities)
 
-                for child in token.children:
-                    if child.dep_ == "prep" and child.text == "than":
-                        for obj in child.children:
-                            if obj.dep_ == "pobj":
-                                comparative_object = f"{comparative_adjective} than {obj.text}"
-                                relations.append((subject, verb, comparative_object))
-
-            if token.dep_ == "cc" and token.text in ("but", "and"):
-                for next_comp in token.head.conjuncts:
-                    if next_comp.dep_ == "acomp":
-                        next_adjective = next_comp.text
-                        next_subject = None
-                        next_object = None
-
-                        for child in next_comp.children:
-                            if child.dep_ == "nsubj":
-                                next_subject = child.text
-
-                            if child.dep_ == "prep" and child.text == "than":
-                                for obj in child.children:
-                                    if obj.dep_ == "pobj":
-                                        next_object = f"{next_adjective} than {obj.text}"
-                                        relations.append((next_subject, verb, next_object))
-
-        print(f"\t[ SRL parsing results: {relations} ]")
-        return relations
 
 
     # def perform_relation_extraction(self, text):
@@ -258,20 +235,20 @@ class OntologicalFeatureDetection:
     #     print(f"Relation extraction results: {relations}")
     #     return relations
 
-    def add_entity(self, tx, entity, label, timestamp):
-        print(f"Adding entity: {entity}, label: {label} at {timestamp}")
-        tx.run("MERGE (e:Entity {name: $entity, label: $label, created_at: $timestamp})",
-               entity=entity, label=label, timestamp=timestamp)
+    def add_entity(self, tx, entity_id: str, entity_label: str, properties: dict):
+        query = "MERGE (e:{label} {{id: $entity_id}})\n".format(label=entity_label)
+        for key, value in properties.items():
+            query += "SET e.{key} = ${key}\n".format(key=key)
+        tx.run(query, entity_id=entity_id, **properties)
 
-    def add_relation(self, tx, entity1, relation, entity2, timestamp):
-        print(f"Attempting to create relationship: ({entity1})-[:{relation}]->({entity2}) at {timestamp}")
-        result = tx.run("MATCH (a:Entity {name: $entity1}), (b:Entity {name: $entity2}) "
-                        "MERGE (a)-[r:RELATION {type: $relation, created_at: $timestamp}]->(b) "
-                        "RETURN r",
-                        entity1=entity1, relation=relation, entity2=entity2, timestamp=timestamp)
-        relationships = result.values()
-        # print(f"Relationships created: {relationships}")
-        assert len(relationships) > 0, f"Failed to create relationship ({entity1})-[:{relation}]->({entity2})"
+    def add_relation(self, tx, source_id: str, relation_type: str, target_id: str, properties: dict):
+        query = (
+            "MATCH (source {{id: $source_id}}), (target {{id: $target_id}})\n"
+            "MERGE (source)-[r:{relation_type}]->(target)\n".format(relation_type=relation_type)
+        )
+        for key, value in properties.items():
+            query += "SET r.{key} = ${key}\n".format(key=key)
+        tx.run(query, source_id=source_id, target_id=target_id, **properties)
 
         # print(f"Relationship created: ({entity1})-[:{relation}]->({entity2}) at {timestamp}")
 
@@ -281,67 +258,99 @@ class OntologicalFeatureDetection:
         pos_tags = self.perform_pos_tagging(text)
         dependencies = self.perform_dependency_parsing(text)
         srl_results = self.perform_srl(text)
-        relations = self.perform_relation_extraction(text)
+        relations, relational_entities = self.perform_relation_extraction(text, srl_results)
         timestamp = datetime.now().isoformat()
 
         context_entities = [(user_id, "USER"), (session_id, "SESSION"), (message_id, "MESSAGE")]
 
         return entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities
 
-    def store_ontology(self, user_id, session_id, message_id, message, timestamp, context_entities):
-        message_entity = f"message_{message_id}"
+    def store_ontology(self, user_id, session_id, message_id, message, timestamp, context_entities, relations):
         with self.app_state.get_driver_session() as neo4j_session:
-            # Insert context entities
-            for entity, label in context_entities:
-                neo4j_session.execute_write(self.add_entity, entity, label, timestamp)
+            def _store_ontology(tx):
+                # Insert message entity with properties
+                print(f"Inserting message entity: ({message_id})")
+                self.add_entity(tx, message_id, "MESSAGE", {"content": message, "timestamp": timestamp})
 
-            # Insert message entity
-            neo4j_session.execute_write(self.add_entity, message_entity, "MESSAGE", timestamp, message)
+                # Create relationships between user, session, and message
+                print(f"Creating relationship: ({user_id})-[:SENT]->({message_id})")
+                self.add_relation(tx, user_id, "SENT", message_id, {"timestamp": timestamp})
+                print(f"Creating relationship: ({session_id})-[:CONTAINS]->({message_id})")
+                self.add_relation(tx, session_id, "CONTAINS", message_id, {"timestamp": timestamp})
+                print(f"Creating relationship: ({user_id})-[:PARTICIPATED_IN]->({session_id})")
+                self.add_relation(tx, user_id, "PARTICIPATED_IN", session_id, {"timestamp": timestamp})
 
-            # Create relationships between user, session, and message
-            print(f"Creating relationship: ({user_id})-[:SENT]->({message_entity})")
-            neo4j_session.execute_write(self.add_relation, user_id, "SENT", message_entity, timestamp)
-            print(f"Creating relationship: ({session_id})-[:CONTAINS]->({message_entity})")
-            neo4j_session.execute_write(self.add_relation, session_id, "CONTAINS", message_entity, timestamp)
-            print(f"Creating relationship: ({user_id})-[:PARTICIPATED_IN]->({session_id})")
-            neo4j_session.execute_write(self.add_relation, user_id, "PARTICIPATED_IN", session_id, timestamp)
+                # Insert context entities and create relationships with the message
+                for entity, label in context_entities:
+                    print(f"Inserting context entity: ({entity})")
+                    self.add_entity(tx, entity, label, {"timestamp": timestamp})
+                    print(f"Creating relationship: ({message_id})-[:HAS_ENTITY]->({entity})")
+                    self.add_relation(tx, message_id, "HAS_ENTITY", entity, {"timestamp": timestamp})
 
-            # Verify data insertion
-            # self.verify_data_insertion(neo4j_session, user, session_entity, message_entity)
+                # Create relationships based on relation extraction results
+                for subject, relation, object_ in relations:
+                    print(f"Creating relationship: ({subject})-[:{relation}]->({object_})")
+                    self.add_relation(tx, subject, relation, object_, {"timestamp": timestamp})
 
-    def verify_data_insertion(self, neo4j_session, user, session_entity, message_entity):
-        # Verify user entity
-        result = neo4j_session.run("MATCH (e:Entity {name: $name, label: 'USER'}) RETURN e", name=user)
-        user_node = result.single()
-        print(f"Verification - User Node: {user_node}")
-        assert user_node is not None, f"User {user} not found in database."
+            neo4j_session.execute_write(_store_ontology)
 
-        # Verify session entity
-        result = neo4j_session.run("MATCH (e:Entity {name: $name, label: 'SESSION'}) RETURN e", name=session_entity)
-        session_node = result.single()
-        print(f"Verification - Session Node: {session_node}")
-        assert session_node is not None, f"Session {session_entity} not found in database."
+        # Verify data insertion
+        self.verify_data_insertion(user_id, session_id, message_id, message, timestamp, context_entities)
 
-        # Verify message entity
-        result = neo4j_session.run("MATCH (e:Entity {name: $name, label: 'MESSAGE'}) RETURN e", name=message_entity)
-        message_node = result.single()
-        print(f"Verification - Message Node: {message_node}")
-        assert message_node is not None, f"Message {message_entity} not found in database."
+    def verify_data_insertion(self, user_id, session_id, message_id, message, timestamp, context_entities):
+        with self.app_state.get_driver_session() as neo4j_session:
+            # Retrieve message content and timestamp
+            result = neo4j_session.run(
+                "MATCH (m:MESSAGE {id: $message_id}) "
+                "RETURN m.content AS message, m.timestamp AS timestamp",
+                message_id=message_id
+            )
+            message_data = result.single()
+            assert message_data["message"] == message, f"Expected message: {message}, got: {message_data['message']}"
+            assert message_data[
+                       "timestamp"] == timestamp, f"Expected timestamp: {timestamp}, got: {message_data['timestamp']}"
+            print("Message content and timestamp verified.")
 
-        # Verify relationships
-        self.verify_relationship(neo4j_session, user, message_entity, "SENT")
-        self.verify_relationship(neo4j_session, session_entity, message_entity, "CONTAINS")
-        self.verify_relationship(neo4j_session, user, session_entity, "PARTICIPATED_IN")
+            # Retrieve user_id
+            result = neo4j_session.run(
+                "MATCH (m:MESSAGE {id: $message_id})<-[:SENT]-(u:USER) "
+                "RETURN u.id AS user_id",
+                message_id=message_id
+            )
+            record = result.single()
+            if record:
+                retrieved_user_id = record["user_id"]
+                assert retrieved_user_id == user_id, f"Expected user_id: {user_id}, got: {retrieved_user_id}"
+                print("User ID verified.")
+            else:
+                print(f"No user found for message_id: {message_id}")
 
-    def verify_relationship(self, neo4j_session, start_entity, end_entity, relation_type):
-        result = neo4j_session.run(
-            "MATCH (a:Entity {name: $start_entity})-[r:RELATION {type: $relation_type}]->(b:Entity {name: $end_entity}) "
-            "RETURN r",
-            start_entity=start_entity, relation_type=relation_type, end_entity=end_entity)
-        relationships = result.values()
-        print(f"Verification - Relationships ({start_entity})-[:{relation_type}]->({end_entity}): {relationships}")
-        assert relationships, f"No relationships ({start_entity})-[:{relation_type}]->({end_entity}) found in database."
-        return relationships[0]
+            # Retrieve session_id
+            result = neo4j_session.run(
+                "MATCH (m:MESSAGE {id: $message_id})<-[:CONTAINS]-(s:SESSION) "
+                "RETURN s.id AS session_id",
+                message_id=message_id
+            )
+            record = result.single()
+            if record:
+                retrieved_session_id = record["session_id"]
+                assert retrieved_session_id == session_id, f"Expected session_id: {session_id}, got: {retrieved_session_id}"
+                print("Session ID verified.")
+            else:
+                print(f"No session found for message_id: {message_id}")
+
+            # Retrieve context entities
+            result = neo4j_session.run(
+                "MATCH (m:MESSAGE {id: $message_id})-[:HAS_ENTITY]->(e) "
+                "RETURN e.id AS entity, labels(e) AS labels",
+                message_id=message_id
+            )
+            retrieved_context_entities = [(record["entity"], record["labels"][0]) for record in result]
+            assert set(retrieved_context_entities) == set(
+                context_entities), f"Expected context entities: {context_entities}, got: {retrieved_context_entities}"
+            print("Context entities verified.")
+
+            print("Data insertion verified successfully.")
 
     def parse_input(self, input_str):
         topic, concepts = input_str.split("::")
@@ -376,75 +385,53 @@ class OntologicalFeatureDetection:
 
     def extract_mermaid_syntax(self, input_data, input_type="paragraph", timestamp=None):
         message = input_data
-        temp_user_id = "user_unknown"
-        session_user_id = "session_unknown"
-        message_id = "message_unknown"
+        user_id = "userPRIME"
+        session_id = "sessionTEMP"
+        message_id = "message"
 
         if input_type == "paragraph":
             entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.build_ontology_from_paragraph(
-                temp_user_id, session_user_id, message_id, input_data)
+                user_id, session_id, message_id, input_data)
         elif input_type == "components":
             message, entities, dependencies, relations, srl_results, timestamp, context_entities = input_data
         else:  # input_type == "compressed_data"
             entities, relations = self.build_ontology_from_compressed_data(input_data)
-            context_entities = [(temp_user_id, "USER"), (session_user_id, "SESSION"), (message_id, "MESSAGE")]
+            context_entities = [(user_id, "USER"), (session_id, "SESSION"), (message_id, "MESSAGE")]
             srl_results = []
             dependencies = []
             pos_tags = []
             message = input_data
-
-        subgraph_entities = set()
-        edges = set()
-
-        if input_type == "paragraph" or input_type == "components":
-            for result in srl_results:
-                if 'entity' in result and 'word' in result:
-                    entity = result['word'].replace(" ", "_")
-                    srl_entity = result["entity"].replace(" ", "_")
-                    role = result["role"]
-
-                    if role in ["MORE_COMPLICATED", "LESS_COMPLICATED"]:
-                        subgraph_entities.add(entity)
-                        subgraph_entities.add(srl_entity)
-                        subgraph_entities.add(role.lower())
-                        if role == "MORE_COMPLICATED":
-                            edges.add(f'{entity} --> {srl_entity}')
-                        else:
-                            edges.add(f'{srl_entity} --> {entity}')
 
         if timestamp is None:
             timestamp = datetime.now().isoformat()
 
         mermaid_syntax = "flowchart LR\n"
 
-        if context_entities:
-            user_entity = next((entity for entity, label in context_entities if label == "USER"), None)
-            session_entity = next((entity for entity, label in context_entities if label == "SESSION"), None)
-            if user_entity and session_entity:
-                user_entity_id = user_entity.replace(" ", "_")
-                session_entity_id = session_entity.replace(" ", "_")
-                mermaid_syntax += f"    {user_entity_id}[\"{user_entity} (USER)\"] --> {session_entity_id}[\"{session_entity} (SESSION)\"]\n"
-                mermaid_syntax += f"    timestamp[\"{timestamp}\"] --> {user_entity_id}\n"
+        # Add user, session, and timestamp nodes
+        mermaid_syntax += f'    {user_id}["{user_id} (USER)"] --> {session_id}["{session_id} (SESSION)"]\n'
+        mermaid_syntax += f'    timestamp["{timestamp}"] --> {user_id}\n'
 
-        message_entity_id = "message"
-        message_subgraph_id = f"subgraph_{message_entity_id}"
-        mermaid_syntax += f" subgraph {message_subgraph_id}[\"Message Subgraph\"]\n"
+        # Add message node and its connections
+        mermaid_syntax += f'    {message_id}["{message} (MESSAGE)"] --> {user_id}\n'
+        mermaid_syntax += f'    {message_id} --> {session_id}\n'
+        mermaid_syntax += f'    {message_id} --> timestamp\n'
 
-        for entity in subgraph_entities:
-            if entity not in ["less_complicated", "more_complicated"]:
-                mermaid_syntax += f"        {entity}[\"{entity}\"]\n"
-            else:
-                mermaid_syntax += f"        {entity}[\"{entity.replace('_', ' ')}\"]\n"
+        # Add subgraph for entities and relations
+        mermaid_syntax += f'    subgraph subgraph_{message_id}["Message Subgraph"]\n'
+        added_entities = set()
+        for relation in relations:
+            subject, relation_type, object_ = relation
+            if subject not in added_entities:
+                mermaid_syntax += f'        {subject}["{subject}"]\n'
+                added_entities.add(subject)
+            if object_ not in added_entities:
+                mermaid_syntax += f'        {object_}["{object_}"]\n'
+                added_entities.add(object_)
+            relation_label = "more complicated" if "more" in relation_type else "less complicated"
+            mermaid_syntax += f'        {subject} -->|"{relation_label}"| {object_}\n'
+        mermaid_syntax += f'    end\n'
 
-        mermaid_syntax += "  end\n"
-
-        for edge in sorted(edges):
-            mermaid_syntax += f"    {edge}\n"
-
-        mermaid_syntax += f"    {message_entity_id}[\"{message} (MESSAGE)\"] --> {user_entity_id}\n"
-        mermaid_syntax += f"    {message_entity_id} --> {session_entity_id}\n"
-        mermaid_syntax += f"    {message_entity_id} --> timestamp\n"
-        mermaid_syntax += f"    {message_entity_id} --> {message_subgraph_id}\n"
+        mermaid_syntax += f'    {message_id} --> subgraph_{message_id}\n'
 
         return mermaid_syntax
 

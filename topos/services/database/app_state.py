@@ -70,16 +70,23 @@ class AppState:
         self.state = {}
         print("\t\t\t[ app_state :: close successful ]")
 
-    @staticmethod
-    def add_entity(tx, entity, label, timestamp):
-        tx.run("MERGE (e:Entity {name: $entity, label: $label, created_at: $timestamp})",
-               entity=entity, label=label, timestamp=timestamp)
-
-    @staticmethod
-    def add_relation(tx, entity1, relation, entity2, timestamp):
-        tx.run("MATCH (a:Entity {name: $entity1}), (b:Entity {name: $entity2}) "
-               "MERGE (a)-[r:RELATION {type: $relation, created_at: $timestamp}]->(b) ",
-               entity1=entity1, relation=relation, entity2=entity2, timestamp=timestamp)
+    # @staticmethod
+    # def add_entity(tx, entity_id: str, entity_label: str, properties: dict):
+    #     query = "MERGE (e:{label} {{id: $entity_id}})\n".format(label=entity_label)
+    #     for key, value in properties.items():
+    #         query += "SET e.{key} = ${key}\n".format(key=key)
+    #     tx.run(query, entity_id=entity_id, **properties)
+    #
+    # @staticmethod
+    # def add_relation(self, tx, source_id: str, relation_type: str, target_id: str, properties: dict):
+    #     query = (
+    #         "MATCH (source), (target)\n"
+    #         "WHERE source.id = $source_id AND target.id = $target_id\n"
+    #         "MERGE (source)-[r:{relation_type}]->(target)\n".format(relation_type=relation_type)
+    #     )
+    #     for key, value in properties.items():
+    #         query += "SET r.{key} = ${key}\n".format(key=key)
+    #     tx.run(query, source_id=source_id, target_id=target_id, **properties)
 
     def value_exists(self, label, key, value):
         with self.get_driver_session() as session:

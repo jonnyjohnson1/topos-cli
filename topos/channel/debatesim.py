@@ -86,7 +86,7 @@ class DebateSimulator:
         entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ontological_feature_detection.build_ontology_from_paragraph(
             user_id, session_id, message_id, composable_string)
 
-        self.ontological_feature_detection.store_ontology(user_id, session_id, message, timestamp, context_entities)
+        self.ontological_feature_detection.store_ontology(user_id, session_id, message_id, message, timestamp, context_entities, relations)
 
         input_components = message, entities, dependencies, relations, srl_results, timestamp, context_entities
 
