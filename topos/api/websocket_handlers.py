@@ -207,7 +207,7 @@ async def chat(websocket: WebSocket):
 
 @router.websocket("/websocket_debate")
 async def debate(websocket: WebSocket):
-    app_state = {"debate": {"topic": "Unknown", "messages": []}, "user_id": "userABC", "session_id": "sessionXYZ"}
+    app_state = {"debate": {"topic": "Unknown", "messages": []}, "user_id": "userPRIME", "session_id": "sessionTEMP"}
     await websocket.accept()
     try:
         while True:

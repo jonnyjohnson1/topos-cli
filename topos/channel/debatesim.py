@@ -32,8 +32,16 @@ class DebateSimulator:
                                                                          self.showroom_db_name)
 
     def get_ontology(self, user_id, session_id, message):
-        composability_string = f"for user {user_id}, of {session_id}, the message is: {message}"
-        mermaid_syntax = self.ontological_feature_detection.extract_mermaid_syntax(composability_string, input_type="paragraph")
+        composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
+
+        entities, pos_tags, dependencies, relations, srl_results, timestamp = self.ontological_feature_detection.build_ontology_from_paragraph(
+            composable_string)
+
+        input_components = entities, dependencies, relations, srl_results, timestamp
+
+        self.ontological_feature_detection.store_ontology(user_id, session_id, message, timestamp)
+
+        mermaid_syntax = self.ontological_feature_detection.extract_mermaid_syntax(input_components, input_type="components")
         return mermaid_syntax
 
     def search_messages_by_user(self, user_id):
@@ -76,7 +84,7 @@ class DebateSimulator:
 
         print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
 
-        app_state.write_ontology(current_ontology)
+        # app_state.write_ontology(current_ontology)
 
         # break previous messages into ontology
         # cache ontology

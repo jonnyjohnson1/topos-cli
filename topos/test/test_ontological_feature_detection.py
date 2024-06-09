@@ -3,7 +3,8 @@
 import os
 import unittest
 from datetime import datetime
-from topos.FC.ontological_feature_detection import OntologicalFeatureDetection, Neo4jConnection
+from topos.services.database.app_state import AppState, Neo4jConnection
+from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
 from dotenv import load_dotenv
 
 
@@ -32,15 +33,19 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
 
     def tearDown(self):
         # Close the connection properly
-        self.ofd.close()
+
+        # Get the existing instance of AppState
+        app_state = AppState.get_instance()
+        app_state.close()
         # Reset the singleton instance
         Neo4jConnection._instance = None
 
-    def create_test_database(self):
-        self.neo4j_conn.create_database(self.neo4j_test_database)
+    # def create_test_database(self):
+    #     self.neo4j_conn.create_database(self.neo4j_test_database)
 
     def clean_database(self):
-        with self.ofd.driver.session(database=self.neo4j_test_database) as session:
+        app_state = AppState.get_instance()
+        with app_state.driver.session(database=self.neo4j_test_database) as session:
             session.run("MATCH (n) DETACH DELETE n")
 
     def test_ontological_detection(self):
@@ -70,26 +75,27 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
         print("Mermaid Syntax for Compressed Data Input:")
         print(mermaid_syntax_compressed)
 
-        # Close the instance
-        ofd.close()
-
     def test_timestamp_and_accessors(self):
-        user_id = "userABC"
-        session_id = "sessionXYZ"
+        user_id = "userRAM"
+        session_id = "sessionZIP"
         message = "Hello, this is a test message!"
 
         # Extract the current timestamp
         timestamp = datetime.now().isoformat()
 
         # Create and test the ontology extraction with timestamp
-        composability_string = f"for user {user_id}, of {session_id}, the message is: {message}"
-        mermaid_syntax = self.ofd.extract_mermaid_syntax(composability_string, input_type="paragraph",
+        composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
+        mermaid_syntax = self.ofd.extract_mermaid_syntax(composable_string, input_type="paragraph",
                                                          timestamp=timestamp)
         print("Mermaid Syntax with Timestamp:")
         print(mermaid_syntax)
 
         # Insert test data into Neo4j
-        self.ofd.build_ontology_from_paragraph(composability_string)
+        entities, pos_tags, dependencies, relations, srl_results, timestamp = self.ofd.build_ontology_from_paragraph(composable_string)
+
+        message = composable_string
+
+        self.ofd.store_ontology(user_id, session_id, message, timestamp)
 
         # Test search functions
         messages_by_user = self.ofd.get_messages_by_user(user_id, "SENT")

@@ -6,7 +6,7 @@ import spacy
 import warnings
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 from datetime import datetime
-from topos.services.database.neo4j_connector import Neo4jConnection
+from topos.services.database.app_state import AppState
 
 # Suppress specific warnings related to model initialization
 warnings.filterwarnings("ignore", message="Some weights of the model checkpoint at")
@@ -41,22 +41,18 @@ class OntologicalFeatureDetection:
             subprocess.run(["python", "-m", "spacy", "download", spacy_model_name])
             self.nlp = spacy.load(spacy_model_name)
 
-        # Add custom entities using EntityRuler
+        # Add custom entities using EntityRuler with regex patterns
         ruler = self.nlp.add_pipe("entity_ruler")
-        patterns = [{"label": "USER", "pattern": "userABC"}, {"label": "SESSION", "pattern": "sessionXYZ"}]
+        patterns = [
+            {"label": "USER", "pattern": [{"TEXT": {"REGEX": "^user.*$"}}]},
+            {"label": "SESSION", "pattern": [{"TEXT": {"REGEX": "^session.*$"}}]}
+        ]
         ruler.add_patterns(patterns)
 
-        #@note: neo4j only allows one database per instance
-        self.database = "neo4j"#neo4j_database_name
+        self.showroom_db_name = "neo4j"
 
-        # Initialize Neo4j connection using singleton
-        self.neo4j_conn = Neo4jConnection(neo4j_uri, neo4j_user, neo4j_password)
-        self.driver = self.neo4j_conn.get_driver()
-
-    def close(self):
-        # Only close the connection if it is not shared by other instances
-        if self.neo4j_conn:
-            self.neo4j_conn.close()
+        # Initialize app state with Neo4j connection details
+        self.app_state = AppState(neo4j_uri, neo4j_user, neo4j_password, self.showroom_db_name)
 
     def perform_ner(self, text):
         doc = self.nlp(text)
@@ -77,15 +73,163 @@ class OntologicalFeatureDetection:
         return dependencies
 
     def perform_srl(self, text):
-        nlp_pipeline = pipeline("ner", model=self.model, tokenizer=self.tokenizer)
-        results = nlp_pipeline(text)
-        print(f"SRL results: {results}")
-        return results
+        # Parse the input text to extract dependencies
+        doc = self.nlp(text)
+        # Initialize an empty list to store the SRL results
+        srl_results = []
+
+        # Extract entities and their roles
+        for token in doc:
+            if token.dep_ in ("nsubj", "dobj", "pobj"):
+                srl_results.append({"entity": token.head.text, "role": token.dep_.upper(), "word": token.text})
+
+        # Identify comparative structures and their entities
+        for token in doc:
+            if token.dep_ == "acomp" and token.head.pos_ in ["VERB", "AUX"]:
+                comparative = {"entity": token.head.text, "role": "COMPARATIVE", "word": token.text}
+                srl_results.append(comparative)
+                for child in token.children:
+                    if child.dep_ == "prep" and child.text == "than":
+                        for grandchild in child.children:
+                            if grandchild.dep_ == "pobj":
+                                srl_results.append({"entity": token.text, "role": "COMPARATIVE_ENTITY", "word": grandchild.text})
+
+        # Handle second comparative structure separately
+        for token in doc:
+            if token.dep_ in ["advmod", "cc"] and token.head.dep_ == "acomp":
+                for child in token.children:
+                    if child.dep_ == "prep" and child.text == "than":
+                        for grandchild in child.children:
+                            if grandchild.dep_ == "pobj":
+                                srl_results.append({"entity": token.head.text, "role": "COMPARATIVE", "word": token.text})
+                                srl_results.append({"entity": token.text, "role": "COMPARATIVE_ENTITY", "word": grandchild.text})
+
+        return srl_results
 
     def perform_relation_extraction(self, text):
+        doc = self.nlp(text)
         relations = []
-        print(f"Relation extraction results: {relations}")
+
+        for token in doc:
+            if token.dep_ in ("nsubj", "dobj") and token.head.pos_ == "VERB":
+                subject = None
+                object_ = None
+                verb = token.head.text
+
+                if token.dep_ == "nsubj":
+                    subject = token.text
+                    for child in token.head.children:
+                        if child.dep_ in ("dobj", "pobj"):
+                            object_ = child.text
+                            relations.append((subject, verb, object_))
+
+                elif token.dep_ == "dobj":
+                    object_ = token.text
+                    for child in token.head.children:
+                        if child.dep_ == "nsubj":
+                            subject = child.text
+                            relations.append((subject, verb, object_))
+
+            if token.dep_ == "acomp" and token.head.pos_ in ("VERB", "AUX"):
+                comparative_adjective = token.text
+                verb = token.head.text
+                subject = None
+                comparative_object = None
+
+                for child in token.head.children:
+                    if child.dep_ == "nsubj":
+                        subject = child.text
+
+                for child in token.children:
+                    if child.dep_ == "prep" and child.text == "than":
+                        for obj in child.children:
+                            if obj.dep_ == "pobj":
+                                comparative_object = f"{comparative_adjective} than {obj.text}"
+                                relations.append((subject, verb, comparative_object))
+
+            if token.dep_ == "cc" and token.text in ("but", "and"):
+                for next_comp in token.head.conjuncts:
+                    if next_comp.dep_ == "acomp":
+                        next_adjective = next_comp.text
+                        next_subject = None
+                        next_object = None
+
+                        for child in next_comp.children:
+                            if child.dep_ == "nsubj":
+                                next_subject = child.text
+
+                            if child.dep_ == "prep" and child.text == "than":
+                                for obj in child.children:
+                                    if obj.dep_ == "pobj":
+                                        next_object = f"{next_adjective} than {obj.text}"
+                                        relations.append((next_subject, verb, next_object))
+
         return relations
+
+
+    # def perform_relation_extraction(self, text):
+    #     doc = self.nlp(text)
+    #     relations = []
+    #
+    #     for token in doc:
+    #         # Handle subject-verb-object relationships
+    #         if token.dep_ in ("nsubj", "dobj") and token.head.pos_ == "VERB":
+    #             subject = None
+    #             object_ = None
+    #             verb = token.head.text
+    #
+    #             if token.dep_ == "nsubj":
+    #                 subject = token.text
+    #                 for child in token.head.children:
+    #                     if child.dep_ in ("dobj", "pobj"):
+    #                         object_ = child.text
+    #                         relations.append((subject, verb, object_))
+    #
+    #             elif token.dep_ == "dobj":
+    #                 object_ = token.text
+    #                 for child in token.head.children:
+    #                     if child.dep_ == "nsubj":
+    #                         subject = child.text
+    #                         relations.append((subject, verb, object_))
+    #
+    #         # Handle comparative structures (e.g., "better than", "greater than", "more complicated than")
+    #         if token.dep_ == "acomp" and token.head.pos_ in ("VERB", "AUX"):
+    #             comparative_adjective = token.text
+    #             verb = token.head.text
+    #             subject = None
+    #             comparative_object = None
+    #
+    #             for child in token.head.children:
+    #                 if child.dep_ == "nsubj":
+    #                     subject = child.text
+    #
+    #             for child in token.children:
+    #                 if child.dep_ == "prep" and child.text == "than":
+    #                     for obj in child.children:
+    #                         if obj.dep_ == "pobj":
+    #                             comparative_object = f"{comparative_adjective} than {obj.text}"
+    #                             relations.append((subject, verb, comparative_object))
+    #
+    #         # Handle multiple comparatives in the same sentence
+    #         if token.dep_ == "cc" and token.text in ("but", "and"):
+    #             for next_comp in token.head.conjuncts:
+    #                 if next_comp.dep_ == "acomp":
+    #                     next_adjective = next_comp.text
+    #                     next_subject = None
+    #                     next_object = None
+    #
+    #                     for child in next_comp.children:
+    #                         if child.dep_ == "nsubj":
+    #                             next_subject = child.text
+    #
+    #                         if child.dep_ == "prep" and child.text == "than":
+    #                             for obj in child.children:
+    #                                 if obj.dep_ == "pobj":
+    #                                     next_object = f"{next_adjective} than {obj.text}"
+    #                                     relations.append((next_subject, verb, next_object))
+    #
+    #     print(f"Relation extraction results: {relations}")
+    #     return relations
 
     def add_entity(self, tx, entity, label, timestamp):
         print(f"Adding entity: {entity}, label: {label} at {timestamp}")
@@ -113,30 +257,28 @@ class OntologicalFeatureDetection:
         relations = self.perform_relation_extraction(text)
         timestamp = datetime.now().isoformat()
 
-        user = "userABC"
-        session_entity = "sessionXYZ"
-        message_entity = text.replace(" ", "_")
+        return entities, pos_tags, dependencies, relations, srl_results, timestamp
 
-        with self.driver.session(database=self.database) as neo4j_session:
+    def store_ontology(self, user_id, session_id, message, timestamp):
+        message_entity = message.replace(" ", "_")
+        with self.app_state.get_driver_session() as neo4j_session:
             # Insert user and session entities
-            neo4j_session.execute_write(self.add_entity, user, "USER", timestamp)
-            neo4j_session.execute_write(self.add_entity, session_entity, "SESSION", timestamp)
+            neo4j_session.execute_write(self.add_entity, user_id, "USER", timestamp)
+            neo4j_session.execute_write(self.add_entity, session_id, "SESSION", timestamp)
 
             # Insert message entity
             neo4j_session.execute_write(self.add_entity, message_entity, "MESSAGE", timestamp)
 
             # Create relationships between user, session, and message
-            print(f"Creating relationship: ({user})-[:SENT]->({message_entity})")
-            neo4j_session.execute_write(self.add_relation, user, "SENT", message_entity, timestamp)
-            print(f"Creating relationship: ({session_entity})-[:CONTAINS]->({message_entity})")
-            neo4j_session.execute_write(self.add_relation, session_entity, "CONTAINS", message_entity, timestamp)
-            print(f"Creating relationship: ({user})-[:PARTICIPATED_IN]->({session_entity})")
-            neo4j_session.execute_write(self.add_relation, user, "PARTICIPATED_IN", session_entity, timestamp)
+            print(f"Creating relationship: ({user_id})-[:SENT]->({message_entity})")
+            neo4j_session.execute_write(self.add_relation, user_id, "SENT", message_entity, timestamp)
+            print(f"Creating relationship: ({session_id})-[:CONTAINS]->({message_entity})")
+            neo4j_session.execute_write(self.add_relation, session_id, "CONTAINS", message_entity, timestamp)
+            print(f"Creating relationship: ({user_id})-[:PARTICIPATED_IN]->({session_id})")
+            neo4j_session.execute_write(self.add_relation, user_id, "PARTICIPATED_IN", session_id, timestamp)
 
             # Verify data insertion
             # self.verify_data_insertion(neo4j_session, user, session_entity, message_entity)
-
-        return entities, dependencies, srl_results
 
     def verify_data_insertion(self, neo4j_session, user, session_entity, message_entity):
         # Verify user entity
@@ -195,7 +337,7 @@ class OntologicalFeatureDetection:
                 entities.append((description, "Concept"))
                 relations.append((topic, f"related_to_{index}", description))
 
-        with self.driver.session(database=self.database) as session:
+        with self.app_state.get_driver_session() as session:
             for entity, label in entities:
                 session.execute_write(self.add_entity, entity, label, timestamp)
             for relation in relations:
@@ -205,7 +347,9 @@ class OntologicalFeatureDetection:
 
     def extract_mermaid_syntax(self, input_data, input_type="paragraph", timestamp=None):
         if input_type == "paragraph":
-            entities, dependencies, srl_results = self.build_ontology_from_paragraph(input_data)
+            entities, pos_tags, dependencies, relations, srl_results, timestamp = self.build_ontology_from_paragraph(input_data)
+        elif input_type == "components":
+            entities, dependencies, relations, srl_results, timestamp = input_data
         else:
             entities, relations = self.build_ontology_from_compressed_data(input_data)
 
@@ -216,7 +360,7 @@ class OntologicalFeatureDetection:
             node_id = entity.replace(" ", "_")
             entity_set.add(f'{node_id}["{entity} ({label})"]')
 
-        if input_type == "paragraph":
+        if input_type == "paragraph" or input_type == "components":
             for token, dep, head in dependencies:
                 if dep in ["nsubj", "dobj", "pobj"]:  # Simplified dependency types
                     token_id = token.replace(" ", "_")
@@ -256,7 +400,7 @@ class OntologicalFeatureDetection:
         MATCH (u:Entity {name: $user_id, label: 'USER'})-[:RELATION {type: $relation_type}]->(m:Entity {label: 'MESSAGE'})
         RETURN m.name AS message, m.created_at AS timestamp
         """
-        with self.driver.session(database=self.database) as neo4j_session:
+        with self.app_state.get_driver_session() as neo4j_session:
             result = neo4j_session.run(query, user_id=user_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Messages by user {user_id}: {data}")
@@ -267,7 +411,7 @@ class OntologicalFeatureDetection:
         MATCH (s:Entity {name: $session_id, label: 'SESSION'})-[:RELATION {type: $relation_type}]->(m:Entity {label: 'MESSAGE'})
         RETURN m.name AS message, m.created_at AS timestamp
         """
-        with self.driver.session(database=self.database) as neo4j_session:
+        with self.app_state.get_driver_session() as neo4j_session:
             result = neo4j_session.run(query, session_id=session_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Messages by session {session_id}: {data}")
@@ -278,7 +422,7 @@ class OntologicalFeatureDetection:
         MATCH (s:Entity {name: $session_id, label: 'SESSION'})<-[:RELATION {type: $relation_type}]-(u:Entity {label: 'USER'})
         RETURN u.name AS user_id, u.created_at AS created_at
         """
-        with self.driver.session(database=self.database) as neo4j_session:
+        with self.app_state.get_driver_session() as neo4j_session:
             result = neo4j_session.run(query, session_id=session_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Users by session {session_id}: {data}")
@@ -289,7 +433,7 @@ class OntologicalFeatureDetection:
         MATCH (u:Entity {name: $user_id, label: 'USER'})-[:RELATION {type: $relation_type}]->(s:Entity {label: 'SESSION'})
         RETURN s.name AS session_id, s.created_at AS created_at
         """
-        with self.driver.session(database=self.database) as neo4j_session:
+        with self.app_state.get_driver_session() as neo4j_session:
             result = neo4j_session.run(query, user_id=user_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Sessions by user {user_id}: {data}")
