@@ -214,10 +214,12 @@ async def debate(websocket: WebSocket):
             data = await websocket.receive_text()
             await debate_simulator.debate_step(websocket, data, app_state)
     except WebSocketDisconnect:
-        print("WebSocket disconnected")
+        print("[ WebSocket :: disconnected ]")
     except Exception as e:
+        print(f"[ Exception in WebSocket endpoint :: {e} ]")
         await websocket.send_json({"status": "error", "message": str(e)})
         await websocket.close()
+        raise
 
 
 # async def debate(websocket: WebSocket):

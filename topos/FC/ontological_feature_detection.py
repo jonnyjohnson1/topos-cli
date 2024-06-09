@@ -1,6 +1,8 @@
 # ontological_feature_detection.py
 
 import subprocess
+from collections import deque
+
 import nltk
 import spacy
 import warnings
@@ -61,19 +63,19 @@ class OntologicalFeatureDetection:
             print(f"{token.text}: {token.pos_}")
 
         entities = [(ent.text, ent.label_) for ent in doc.ents]
-        print(f"NER results: {entities}")
+        print(f"\t[ NER results: {entities} ]")
         return entities
 
     def perform_pos_tagging(self, text):
         doc = self.nlp(text)
         pos_tags = [(token.text, token.pos_) for token in doc]
-        print(f"POS tagging results: {pos_tags}")
+        print(f"\t[ POS tagging results: {pos_tags} ]")
         return pos_tags
 
     def perform_dependency_parsing(self, text):
         doc = self.nlp(text)
         dependencies = [(token.text, token.dep_, token.head.text) for token in doc]
-        print(f"Dependency parsing results: {dependencies}")
+        print(f"\t[ Dependency parsing results: {dependencies} ]")
         return dependencies
 
     def perform_srl(self, text):
@@ -188,6 +190,7 @@ class OntologicalFeatureDetection:
                                         next_object = f"{next_adjective} than {obj.text}"
                                         relations.append((next_subject, verb, next_object))
 
+        print(f"\t[ SRL parsing results: {relations} ]")
         return relations
 
 
@@ -285,15 +288,15 @@ class OntologicalFeatureDetection:
 
         return entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities
 
-    def store_ontology(self, user_id, session_id, message, timestamp, context_entities):
-        message_entity = message.replace(" ", "_")
+    def store_ontology(self, user_id, session_id, message_id, message, timestamp, context_entities):
+        message_entity = f"message_{message_id}"
         with self.app_state.get_driver_session() as neo4j_session:
             # Insert context entities
             for entity, label in context_entities:
                 neo4j_session.execute_write(self.add_entity, entity, label, timestamp)
 
             # Insert message entity
-            neo4j_session.execute_write(self.add_entity, message_entity, "MESSAGE", timestamp)
+            neo4j_session.execute_write(self.add_entity, message_entity, "MESSAGE", timestamp, message)
 
             # Create relationships between user, session, and message
             print(f"Creating relationship: ({user_id})-[:SENT]->({message_entity})")
@@ -373,16 +376,24 @@ class OntologicalFeatureDetection:
 
     def extract_mermaid_syntax(self, input_data, input_type="paragraph", timestamp=None):
         message = input_data
+        temp_user_id = "user_unknown"
+        session_user_id = "session_unknown"
+        message_id = "message_unknown"
 
         if input_type == "paragraph":
             entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.build_ontology_from_paragraph(
-                "user_unknown", "session_unknown", "message_unknown", input_data)
+                temp_user_id, session_user_id, message_id, input_data)
         elif input_type == "components":
             message, entities, dependencies, relations, srl_results, timestamp, context_entities = input_data
-        else:
+        else:  # input_type == "compressed_data"
             entities, relations = self.build_ontology_from_compressed_data(input_data)
+            context_entities = [(temp_user_id, "USER"), (session_user_id, "SESSION"), (message_id, "MESSAGE")]
+            srl_results = []
+            dependencies = []
+            pos_tags = []
+            message = input_data
 
-        entity_set = set()
+        subgraph_entities = set()
         edges = set()
 
         if input_type == "paragraph" or input_type == "components":
@@ -393,15 +404,18 @@ class OntologicalFeatureDetection:
                     role = result["role"]
 
                     if role in ["MORE_COMPLICATED", "LESS_COMPLICATED"]:
-                        edges.add(f'{role.lower()} --> {entity}')
-                        edges.add(f'{role.lower()} --> {srl_entity}')
+                        subgraph_entities.add(entity)
+                        subgraph_entities.add(srl_entity)
+                        subgraph_entities.add(role.lower())
+                        if role == "MORE_COMPLICATED":
+                            edges.add(f'{entity} --> {srl_entity}')
+                        else:
+                            edges.add(f'{srl_entity} --> {entity}')
 
         if timestamp is None:
             timestamp = datetime.now().isoformat()
 
-        entity_set.add(f'timestamp["Timestamp: {timestamp}"]')
-
-        mermaid_syntax = "graph LR\n"
+        mermaid_syntax = "flowchart LR\n"
 
         if context_entities:
             user_entity = next((entity for entity, label in context_entities if label == "USER"), None)
@@ -409,28 +423,28 @@ class OntologicalFeatureDetection:
             if user_entity and session_entity:
                 user_entity_id = user_entity.replace(" ", "_")
                 session_entity_id = session_entity.replace(" ", "_")
-                mermaid_syntax += f"    {user_entity_id}[\"{user_entity} (USER)\"]\n"
-                mermaid_syntax += f"    {session_entity_id}[\"{session_entity} (SESSION)\"]\n"
-                mermaid_syntax += f"    {user_entity_id} --> {session_entity_id}\n"
-                mermaid_syntax += f"    timestamp --> {user_entity_id}\n"
+                mermaid_syntax += f"    {user_entity_id}[\"{user_entity} (USER)\"] --> {session_entity_id}[\"{session_entity} (SESSION)\"]\n"
+                mermaid_syntax += f"    timestamp[\"{timestamp}\"] --> {user_entity_id}\n"
 
         message_entity_id = "message"
-        mermaid_syntax += f"    {message_entity_id}[\"{message} (MESSAGE)\"]\n"
-        mermaid_syntax += f"    {message_entity_id} --> {user_entity_id}\n"
-        mermaid_syntax += f"    {message_entity_id} --> {session_entity_id}\n"
-        mermaid_syntax += f"    {message_entity_id} --> timestamp\n"
+        message_subgraph_id = f"subgraph_{message_entity_id}"
+        mermaid_syntax += f" subgraph {message_subgraph_id}[\"Message Subgraph\"]\n"
 
-        for entity, label in entities:
-            if label in ["NOUN", "PROPN"]:
-                node_id = entity.replace(" ", "_")
-                entity_set.add(f'    {node_id}["{entity}"]')
-                edges.add(f'    {node_id} --> {message_entity_id}')
+        for entity in subgraph_entities:
+            if entity not in ["less_complicated", "more_complicated"]:
+                mermaid_syntax += f"        {entity}[\"{entity}\"]\n"
+            else:
+                mermaid_syntax += f"        {entity}[\"{entity.replace('_', ' ')}\"]\n"
 
-        for node in sorted(entity_set):
-            mermaid_syntax += f"{node}\n"
+        mermaid_syntax += "  end\n"
 
         for edge in sorted(edges):
-            mermaid_syntax += f"{edge}\n"
+            mermaid_syntax += f"    {edge}\n"
+
+        mermaid_syntax += f"    {message_entity_id}[\"{message} (MESSAGE)\"] --> {user_entity_id}\n"
+        mermaid_syntax += f"    {message_entity_id} --> {session_entity_id}\n"
+        mermaid_syntax += f"    {message_entity_id} --> timestamp\n"
+        mermaid_syntax += f"    {message_entity_id} --> {message_subgraph_id}\n"
 
         return mermaid_syntax
 
@@ -489,21 +503,12 @@ class OntologicalFeatureDetection:
             print(f"Message {message_id}: {data}")
             return data
 
-    def print_ascii(self, hierarchy, nodes, node_id, indent=0, is_last=True, prefix=""):
-        node_label = nodes[node_id]
-        if indent == 0:
-            output = f"{prefix}{node_label}\n"
-        else:
-            connector = "`- " if is_last else "|- "
-            output = f"{prefix}{connector}{node_label}\n"
-            prefix += "   " if is_last else "|  "
-
-        children = hierarchy.get(node_id, [])
-        for i, child in enumerate(children):
-            is_last_child = i == (len(children) - 1)
-            output += self.print_ascii(hierarchy, nodes, child, indent + 1, is_last_child, prefix)
-
-        return output
+    @staticmethod
+    def check_message_exists(message_id):
+        app_state = AppState.get_instance()
+        exists = app_state.value_exists(label="MESSAGE", key="name", value=message_id)
+        print(f"Message with ID {message_id} exists: {exists}")
+        return exists
 
     @staticmethod
     def build_hierarchy(nodes, edges):
@@ -544,14 +549,67 @@ class OntologicalFeatureDetection:
         root_nodes = list(all_nodes - child_nodes)
         return root_nodes
 
+    from collections import deque
+
     def mermaid_to_ascii(self, mermaid_input):
         nodes, edges = self.parse_mermaid(mermaid_input)
-        hierarchy = self.build_hierarchy(nodes, edges)
         root_nodes = self.find_root_nodes(nodes, edges)
+
         ascii_output = ""
+        visited_nodes = set()
+
         for root_node in root_nodes:
-            ascii_output += self.print_ascii(hierarchy, nodes, root_node)
-        return ascii_output
+            if root_node.startswith("subgraph_"):
+                subgraph_label = nodes[root_node]
+                ascii_output += f"subgraph {subgraph_label}\n"
+                ascii_output += self.traverse_hypergraph(root_node, nodes, edges, visited_nodes, indent=1)
+            else:
+                ascii_output += self.traverse_hypergraph(root_node, nodes, edges, visited_nodes)
+            ascii_output += "\n"  # Add a newline between root nodes
+
+        return ascii_output.strip()  # Remove any trailing newline
+
+    def traverse_hypergraph(self, node_id, nodes, edges, visited_nodes, indent=0, max_depth=None):
+        output = ""
+        queue = deque([(node_id, indent, False)])
+
+        while queue:
+            current_node, current_indent, is_last = queue.popleft()
+
+            if current_node in visited_nodes:
+                continue
+
+            visited_nodes.add(current_node)
+
+            node_label = nodes[current_node]
+            prefix = self.get_prefix(current_indent, is_last)
+            output += f"{prefix}{node_label}\n"
+
+            if max_depth is not None and current_indent >= max_depth:
+                continue
+
+            connected_nodes = self.get_connected_nodes(current_node, edges)
+            for i, child_node in enumerate(connected_nodes):
+                is_last_child = i == len(connected_nodes) - 1
+                queue.append((child_node, current_indent + 1, is_last_child))
+
+        return output
+
+    def get_prefix(self, indent, is_last):
+        if indent == 0:
+            return ""
+        elif is_last:
+            return "    " * (indent - 1) + "└── "
+        else:
+            return "    " * (indent - 1) + "├── "
+
+    def get_connected_nodes(self, node_id, edges):
+        connected_nodes = set()
+        for edge in edges:
+            source, target = edge
+            if source == node_id:
+                connected_nodes.add(target)
+        return list(connected_nodes)
 
 
 # Example usage
