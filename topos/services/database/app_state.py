@@ -80,3 +80,12 @@ class AppState:
         tx.run("MATCH (a:Entity {name: $entity1}), (b:Entity {name: $entity2}) "
                "MERGE (a)-[r:RELATION {type: $relation, created_at: $timestamp}]->(b) ",
                entity1=entity1, relation=relation, entity2=entity2, timestamp=timestamp)
+
+    def value_exists(self, label, key, value):
+        with self.get_driver_session() as session:
+            result = session.run(
+                f"MATCH (n:{label} {{{key}: $value}}) RETURN COUNT(n) > 0 AS exists",
+                value=value
+            )
+            return result.single()["exists"]
+

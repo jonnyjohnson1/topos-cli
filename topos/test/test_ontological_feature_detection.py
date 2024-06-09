@@ -78,6 +78,7 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
     def test_timestamp_and_accessors(self):
         user_id = "userRAM"
         session_id = "sessionZIP"
+        message_id = "messageTAR"
         message = "Hello, this is a test message!"
 
         # Extract the current timestamp
@@ -92,7 +93,7 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
 
         # Insert test data into Neo4j
         entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ofd.build_ontology_from_paragraph(
-            user_id, session_id, composable_string)
+            user_id, session_id, message_id, composable_string)
 
         message = composable_string
 
@@ -122,6 +123,28 @@ class TestOntologicalFeatureDetection(unittest.TestCase):
         for session in sessions_by_user:
             print(session)
         assert sessions_by_user, "No sessions found for the specified user."
+
+    def test_get_message_by_id(self):
+        user_id = "user_test"
+        session_id = "session_test"
+        message_id = "message_test"
+        message_content = "This is a test message for unit testing."
+
+        # Extract the current timestamp
+        timestamp = datetime.now().isoformat()
+
+        # Build and store ontology from the test message
+        entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ofd.build_ontology_from_paragraph(
+            user_id, session_id, message_id, message_content)
+
+        self.ofd.store_ontology(user_id, session_id, message_content, timestamp, context_entities)
+
+        # Retrieve the message by ID and verify the result
+        result = self.ofd.get_message_by_id(message_id)
+        print("Message by ID:", result)
+        self.assertEqual(len(result), 1, "Message not found in the database.")
+        self.assertEqual(result[0]["message_id"], message_id, "Incorrect message ID.")
+        self.assertEqual(result[0]["timestamp"], timestamp, "Incorrect timestamp.")
 
 
 if __name__ == "__main__":

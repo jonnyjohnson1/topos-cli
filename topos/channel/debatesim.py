@@ -1,6 +1,8 @@
 # topos/channel/debatesim.py
 
 import os
+from uuid import uuid4
+
 from dotenv import load_dotenv
 
 import json
@@ -86,7 +88,7 @@ class DebateSimulator:
 
         self.ontological_feature_detection.store_ontology(user_id, session_id, message, timestamp, context_entities)
 
-        input_components = entities, dependencies, relations, srl_results, timestamp, context_entities
+        input_components = message, entities, dependencies, relations, srl_results, timestamp, context_entities
 
         mermaid_syntax = self.ontological_feature_detection.extract_mermaid_syntax(input_components, input_type="components")
         return mermaid_syntax
@@ -106,6 +108,13 @@ class DebateSimulator:
     async def debate_step(self, websocket: WebSocket, data, app_state):
         payload = json.loads(data)
         message = payload["message"]
+
+        # create a new message id, with 36 characters max
+        temp_msg_id = str(uuid4())
+
+        # check for collisions
+        app_state.exists(temp_msg_id)
+
         # session_id = payload["session_id"]
         # user_id = payload["user_id"]
         user_id = app_state.get("user_id", "")

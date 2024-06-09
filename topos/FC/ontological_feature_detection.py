@@ -80,29 +80,53 @@ class OntologicalFeatureDetection:
         doc = self.nlp(text)
         srl_results = []
 
-        for token in doc:
-            if token.dep_ in ("nsubj", "dobj", "pobj"):
-                srl_results.append({"entity": token.head.text, "role": token.dep_.upper(), "word": token.text})
+        subject = None
+        verb = None
+        comparative = None
+        compared_entities = []
 
-        for token in doc:
-            if token.dep_ == "acomp" and token.head.pos_ in ["VERB", "AUX"]:
-                comparative = {"entity": token.head.text, "role": "COMPARATIVE", "word": token.text}
-                srl_results.append(comparative)
-                for child in token.children:
-                    if child.dep_ == "prep" and child.text == "than":
-                        for grandchild in child.children:
-                            if grandchild.dep_ == "pobj":
-                                srl_results.append(
-                                    {"entity": token.text, "role": "MORE_COMPLICATED", "word": token.head.text})
-                                srl_results.append(
-                                    {"entity": token.text, "role": "MORE_COMPLICATED", "word": grandchild.text})
-                                srl_results.append(
-                                    {"entity": grandchild.text, "role": "LESS_COMPLICATED", "word": token.head.text})
+        # Identify comparative structures and their scopes
+        comparative_scopes = []
+        scope_start = None
+        for i, token in enumerate(doc):
+            if token.pos_ == "ADJ" and doc[i + 1].text == "than":
+                comparative = token.text
+                scope_start = i
+            elif scope_start is not None and (token.pos_ == "CCONJ" or i == len(doc) - 1):
+                comparative_scopes.append((scope_start, i))
+                scope_start = None
 
+        # Adjust POS tags for entities within comparative scopes
+        for start, end in comparative_scopes:
+            for i in range(start, end + 1):
+                if doc[i].pos_ == "VERB":
+                    doc[i].pos_ = "PROPN"
+
+        # Identify subject, verb, comparative, and compared entities
         for token in doc:
-            if token.dep_ in ["nsubj", "dobj", "pobj"]:
-                if token.head.pos_ == "NOUN":
-                    srl_results.append({"entity": token.head.text, "role": "RELATED_TO", "word": token.text})
+            if token.dep_ == "nsubj":
+                subject = token.text
+                srl_results.append({"entity": token.text, "role": "SUBJECT", "word": token.text})
+            elif token.dep_ == "ROOT" and token.pos_ in ["VERB", "AUX"]:
+                verb = token.text
+                srl_results.append({"entity": token.text, "role": "VERB", "word": token.text})
+            elif token.dep_ == "acomp" and token.head.pos_ in ["VERB", "AUX"]:
+                comparative = token.text
+                srl_results.append({"entity": token.text, "role": "COMPARATIVE", "word": token.text})
+            elif token.pos_ in ["NOUN", "PROPN"] and any(start <= token.i <= end for start, end in comparative_scopes):
+                compared_entities.append(token.text)
+
+        # Generate comparative relationships
+        if subject and comparative and compared_entities:
+            for i in range(len(compared_entities)):
+                if i == 0:
+                    srl_results.append({"entity": subject, "role": "MORE_COMPLICATED", "word": comparative})
+                    srl_results.append(
+                        {"entity": compared_entities[i], "role": "LESS_COMPLICATED", "word": comparative})
+                else:
+                    srl_results.append({"entity": subject, "role": "LESS_COMPLICATED", "word": comparative})
+                    srl_results.append(
+                        {"entity": compared_entities[i], "role": "MORE_COMPLICATED", "word": comparative})
 
         return srl_results
 
@@ -248,7 +272,7 @@ class OntologicalFeatureDetection:
 
         # print(f"Relationship created: ({entity1})-[:{relation}]->({entity2}) at {timestamp}")
 
-    def build_ontology_from_paragraph(self, user_id, session_id, text):
+    def build_ontology_from_paragraph(self, user_id, session_id, message_id, text):
         print(f"Processing text for ontology: {text}")
         entities = self.perform_ner(text)
         pos_tags = self.perform_pos_tagging(text)
@@ -257,7 +281,7 @@ class OntologicalFeatureDetection:
         relations = self.perform_relation_extraction(text)
         timestamp = datetime.now().isoformat()
 
-        context_entities = [(user_id, "USER"), (session_id, "SESSION")]
+        context_entities = [(user_id, "USER"), (session_id, "SESSION"), (message_id, "MESSAGE")]
 
         return entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities
 
@@ -348,28 +372,20 @@ class OntologicalFeatureDetection:
         return entities, relations
 
     def extract_mermaid_syntax(self, input_data, input_type="paragraph", timestamp=None):
+        message = input_data
+
         if input_type == "paragraph":
             entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.build_ontology_from_paragraph(
-                "user_unknown", "session_unknown", input_data)
+                "user_unknown", "session_unknown", "message_unknown", input_data)
         elif input_type == "components":
-            entities, dependencies, relations, srl_results, timestamp, context_entities = input_data
+            message, entities, dependencies, relations, srl_results, timestamp, context_entities = input_data
         else:
             entities, relations = self.build_ontology_from_compressed_data(input_data)
 
         entity_set = set()
         edges = set()
 
-        for entity, label in entities:
-            node_id = entity.replace(" ", "_")
-            entity_set.add(f'{node_id}["{entity} ({label})"]')
-
         if input_type == "paragraph" or input_type == "components":
-            for token, dep, head in dependencies:
-                if dep in ["nsubj", "dobj", "pobj"]:
-                    token_id = token.replace(" ", "_")
-                    head_id = head.replace(" ", "_")
-                    edges.add(f'{head_id} --> {token_id}')
-
             for result in srl_results:
                 if 'entity' in result and 'word' in result:
                     entity = result['word'].replace(" ", "_")
@@ -379,13 +395,6 @@ class OntologicalFeatureDetection:
                     if role in ["MORE_COMPLICATED", "LESS_COMPLICATED"]:
                         edges.add(f'{role.lower()} --> {entity}')
                         edges.add(f'{role.lower()} --> {srl_entity}')
-                    elif role == "RELATED_TO":
-                        edges.add(f'{entity} --> {srl_entity}')
-
-            for relation in relations:
-                head_id = relation[0].replace(" ", "_")
-                token_id = relation[2].replace(" ", "_")
-                edges.add(f'{head_id} --> {token_id}')
 
         if timestamp is None:
             timestamp = datetime.now().isoformat()
@@ -393,8 +402,6 @@ class OntologicalFeatureDetection:
         entity_set.add(f'timestamp["Timestamp: {timestamp}"]')
 
         mermaid_syntax = "graph LR\n"
-        for node in sorted(entity_set):
-            mermaid_syntax += f"    {node}\n"
 
         if context_entities:
             user_entity = next((entity for entity, label in context_entities if label == "USER"), None)
@@ -402,20 +409,28 @@ class OntologicalFeatureDetection:
             if user_entity and session_entity:
                 user_entity_id = user_entity.replace(" ", "_")
                 session_entity_id = session_entity.replace(" ", "_")
-                mermaid_syntax += f"    {user_entity_id}[\"{user_entity_id} (USER)\"]\n"
-                mermaid_syntax += f"    {session_entity_id}[\"{session_entity_id} (SESSION)\"]\n"
+                mermaid_syntax += f"    {user_entity_id}[\"{user_entity} (USER)\"]\n"
+                mermaid_syntax += f"    {session_entity_id}[\"{session_entity} (SESSION)\"]\n"
                 mermaid_syntax += f"    {user_entity_id} --> {session_entity_id}\n"
                 mermaid_syntax += f"    timestamp --> {user_entity_id}\n"
 
-        message_entity = next((entity for entity, label in entities if label == "MESSAGE"), None)
-        if message_entity:
-            message_entity_id = message_entity.replace(" ", "_")
-            mermaid_syntax += f"    {message_entity_id} --> {user_entity_id}\n"
-            mermaid_syntax += f"    {message_entity_id} --> {session_entity_id}\n"
-            mermaid_syntax += f"    {message_entity_id} --> timestamp\n"
+        message_entity_id = "message"
+        mermaid_syntax += f"    {message_entity_id}[\"{message} (MESSAGE)\"]\n"
+        mermaid_syntax += f"    {message_entity_id} --> {user_entity_id}\n"
+        mermaid_syntax += f"    {message_entity_id} --> {session_entity_id}\n"
+        mermaid_syntax += f"    {message_entity_id} --> timestamp\n"
+
+        for entity, label in entities:
+            if label in ["NOUN", "PROPN"]:
+                node_id = entity.replace(" ", "_")
+                entity_set.add(f'    {node_id}["{entity}"]')
+                edges.add(f'    {node_id} --> {message_entity_id}')
+
+        for node in sorted(entity_set):
+            mermaid_syntax += f"{node}\n"
 
         for edge in sorted(edges):
-            mermaid_syntax += f"    {edge}\n"
+            mermaid_syntax += f"{edge}\n"
 
         return mermaid_syntax
 
@@ -461,6 +476,17 @@ class OntologicalFeatureDetection:
             result = neo4j_session.run(query, user_id=user_id, relation_type=relation_type)
             data = [record.data() for record in result]
             print(f"Sessions by user {user_id}: {data}")
+            return data
+
+    def get_message_by_id(self, message_id):
+        query = """
+        MATCH (m:Entity {name: $message_id, label: 'MESSAGE'})
+        RETURN m.name AS message_id, m.created_at AS timestamp
+        """
+        with self.app_state.get_driver_session() as neo4j_session:
+            result = neo4j_session.run(query, message_id=message_id)
+            data = [record.data() for record in result]
+            print(f"Message {message_id}: {data}")
             return data
 
     def print_ascii(self, hierarchy, nodes, node_id, indent=0, is_last=True, prefix=""):
