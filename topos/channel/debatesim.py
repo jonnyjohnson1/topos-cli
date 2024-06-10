@@ -8,11 +8,19 @@ from dotenv import load_dotenv
 import json
 from datetime import datetime
 import time
+
+from transformers import AutoTokenizer, AutoModel
+import torch
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+from scipy.stats import entropy
+
 from fastapi import WebSocket, WebSocketDisconnect
 from topos.FC.semantic_compression import SemanticCompression
 from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
 from ..generations.ollama_chat import stream_chat
+from ..services.database.app_state import AppState
 from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
 from topos.FC.conversation_cache_manager import ConversationCacheManager
@@ -68,6 +76,10 @@ from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
 
 class DebateSimulator:
     def __init__(self):
+        # Load the pre-trained model and tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+        self.model = AutoModel.from_pretrained('bert-base-uncased')
+
         load_dotenv()  # Load environment variables
 
         neo4j_uri = os.getenv("NEO4J_URI")
@@ -122,16 +134,16 @@ class DebateSimulator:
 
         # default to app state if not provided
         if user_id == "":
-            user_id = app_state.get("user_id", "")
+            user_id = app_state.get_value("user_id", "")
         if session_id == "":
-            session_id = app_state.get("session_id", "")
+            session_id = app_state.get_value("session_id", "")
 
         message_history = payload["message_history"]
         model = payload.get("model", "solar")
         temperature = float(payload.get("temperature", 0.04))
         current_topic = payload.get("topic", "Unknown")
 
-        prior_ontology = app_state.get("prior_ontology", [])
+        prior_ontology = app_state.get_value("prior_ontology", [])
 
         # if prior_ontology is []:
         #     prior_ontology = []
@@ -146,7 +158,9 @@ class DebateSimulator:
 
         print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
 
-        # app_state.write_ontology(current_ontology)
+        prior_ontology.append(current_ontology)
+
+        app_state.set_state("prior_ontology", prior_ontology)
 
         # break previous messages into ontology
         # cache ontology
@@ -156,7 +170,7 @@ class DebateSimulator:
         # ** BLEU score a 10x return on the ontology
         # read ontology + newest
 
-        await self.think(topic="Chess vs Checkers", messages=message_history)
+        await self.think(topic="Chess vs Checkers", prior_ontology=prior_ontology)
 
 
         # topic3:
@@ -257,10 +271,210 @@ class DebateSimulator:
             {"status": "completed", "response": output_combined, "semantic_category": semantic_category,
              "completed": True})
 
+    def embed_text(self, text):
+        # Tokenize the input text
+        inputs = self.tokenizer(text, return_tensors='pt')
 
-    async def think(self, topic, messages):
-        # Implement the think method logic here
+        # Get the hidden states from the model
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        # Use the [CLS] token representation as the embedding
+        cls_embedding = outputs.last_hidden_state[:, 0, :].numpy().squeeze()
+        return cls_embedding
+
+    def compute_semantic_distances(self, ontology, topic_embedding):
+        # Embed the ontology text
+        ontology_embedding = self.embed_text(ontology)
+
+        # Compute cosine similarity between ontology and topic
+        similarity = cosine_similarity([ontology_embedding], [topic_embedding])[0][0]
+
+        return similarity
+
+    def aggregate_distributions(self, semantic_distances):
+        # Convert to numpy array for easier manipulation
+        distances = np.array(semantic_distances)
+
+        # Compute the mean across all distances to form the collective distribution
+        collective_distribution = np.mean(distances, axis=0)
+
+        return collective_distribution
+
+    def calculate_kl_divergence(self, p, q):
+        # Ensure the distributions are numpy arrays
+        p = np.asarray(p, dtype=float)
+        q = np.asarray(q, dtype=float)
+
+        # Normalize the distributions
+        p = p / np.sum(p)
+        q = q / np.sum(q)
+
+        # Calculate the KL-Divergence
+        kl_div = entropy(p, q)
+
+        return kl_div
+
+    def parse_mermaid_to_dict(self, mermaid_str):
+        # Implement parsing mermaid syntax to dict
         pass
+
+    def build_graph(self, parsed_ontology):
+        # Implement the graph building logic
+        pass
+
+    def calculate_vertex_weights(self, graph):
+        # Implement the vertex weight calculation logic
+        pass
+
+    def calculate_sub_graph_weights(self, graph):
+        # Implement the sub-graph weight calculation logic
+        pass
+
+    def combine_weights(self, vertex_weights, sub_graph_weights):
+        # Implement the logic to combine weights
+        pass
+
+    def rank_arguments(self, argument_weights):
+        # Implement the logic to rank arguments
+        pass
+
+    async def think(self, topic, prior_ontology):
+        print(f"\t[ think :: topic :: {topic} ]")
+        print(f"\t[ think :: prior_ontology :: {prior_ontology} ]")
+
+        # Embed the topic
+        topic_embedding = self.embed_text(topic)
+
+        # Compute semantic distances for each contribution
+        semantic_distances = []
+        for ontology in prior_ontology:
+            distance = self.compute_semantic_distances(ontology, topic_embedding)
+            print(f"\t\t[ think :: distance :: {distance} ]")
+            semantic_distances.append(distance)
+
+        # Aggregate the distributions to form a collective distribution
+        collective_distribution = self.aggregate_distributions(semantic_distances)
+
+        # Calculate KL-Divergence for each contribution
+        kl_divergences = []
+        for distance in semantic_distances:
+            kl_divergence = self.calculate_kl_divergence([distance, 1 - distance],
+                                                         [collective_distribution, 1 - collective_distribution])
+            print(f"\t\t[ think :: kl_divergence :: {kl_divergence} ]")
+            kl_divergences.append(kl_divergence)
+
+        # Store results in app_state (subkey session_id)
+        app_state = AppState().get_instance()
+        app_state.set_state("kl_divergences", kl_divergences)
+
+        print(f"\t[ think :: kl_divergences :: {kl_divergences} ]")
+
+        parsed_ontology = [self.parse_mermaid_to_dict(component) for component in prior_ontology]
+        print(f"\t[ think :: parsed_ontology :: {parsed_ontology} ]")
+
+        # Build a graph from parsed ontology
+        graph = self.build_graph(parsed_ontology)
+        print(f"\t[ think :: graph :: {graph} ]")
+
+        # Calculate weights for each vertex based on the number of edges
+        vertex_weights = self.calculate_vertex_weights(graph)
+        print(f"\t[ think :: vertex_weights :: {vertex_weights} ]")
+
+        # Identify and weigh densely connected sub-graphs
+        sub_graph_weights = self.calculate_sub_graph_weights(graph)
+        print(f"\t[ think :: sub_graph_weights :: {sub_graph_weights} ]")
+
+        # Combine weights to determine the strength of each argument
+        argument_weights = self.combine_weights(vertex_weights, sub_graph_weights)
+        print(f"\t[ think :: argument_weights :: {argument_weights} ]")
+
+        # Rank arguments based on their weights
+        ranked_arguments = self.rank_arguments(argument_weights)
+        print(f"\t[ think :: ranked_arguments :: {ranked_arguments} ]")
+
+        return ranked_arguments
+
+    def parse_mermaid_to_dict(self, mermaid_str):
+        """Parse mermaid flowchart syntax into a dictionary with 'relations'."""
+        lines = mermaid_str.strip().split("\n")
+        relations = []
+        for line in lines:
+            if "-->" in line:
+                parts = line.split("-->")
+                subject = parts[0].strip().split('[')[0]
+                relation_type = "less complicated" if "|\"less complicated\"|" in parts[1] else "relation"
+                obj = parts[1].strip().split('[')[0].split('|')[0].strip()
+                relations.append((subject, relation_type, obj))
+        return {"relations": relations}
+
+    def build_graph(self, ontology):
+        print(f"\t[ build_graph :: start ]")
+        graph = {}
+        for index, component in enumerate(ontology):
+            print(f"\t[ build_graph :: component[{index}] :: {component} ]")
+            if isinstance(component, dict) and 'relations' in component:
+                for relation in component['relations']:
+                    subject, relation_type, obj = relation
+                    print(f"\t[ build_graph :: relation :: {subject} --{relation_type}--> {obj} ]")
+                    if subject not in graph:
+                        graph[subject] = []
+                    if obj not in graph:
+                        graph[obj] = []
+                    graph[subject].append(obj)
+                    graph[obj].append(subject)
+            else:
+                print(f"\t[ build_graph :: error :: component[{index}] is not a dict or missing 'relations' key ]")
+        print(f"\t[ build_graph :: graph :: {graph} ]")
+        return graph
+
+    def calculate_vertex_weights(self, graph):
+        print(f"\t[ calculate_vertex_weights :: start ]")
+        vertex_weights = {vertex: len(edges) for vertex, edges in graph.items()}
+        for vertex, weight in vertex_weights.items():
+            print(f"\t[ calculate_vertex_weights :: vertex :: {vertex} :: weight :: {weight} ]")
+        return vertex_weights
+
+    def calculate_sub_graph_weights(self, graph):
+        print(f"\t[ calculate_sub_graph_weights :: start ]")
+        sub_graph_weights = {}
+        visited = set()
+        for vertex in graph:
+            if vertex not in visited:
+                sub_graph = self.dfs(graph, vertex, visited)
+                sub_graph_weight = sum(self.calculate_vertex_weights(sub_graph).values())
+                sub_graph_weights[vertex] = sub_graph_weight
+                print(f"\t[ calculate_sub_graph_weights :: vertex :: {vertex} :: sub_graph_weight :: {sub_graph_weight} ]")
+        return sub_graph_weights
+
+    def dfs(self, graph, start, visited):
+        print(f"\t[ dfs :: start :: {start} ]")
+        stack = [start]
+        sub_graph = {}
+        while stack:
+            vertex = stack.pop()
+            if vertex not in visited:
+                visited.add(vertex)
+                sub_graph[vertex] = graph[vertex]
+                stack.extend([v for v in graph[vertex] if v not in visited])
+                print(f"\t[ dfs :: vertex :: {vertex} :: visited :: {visited} ]")
+        print(f"\t[ dfs :: sub_graph :: {sub_graph} ]")
+        return sub_graph
+
+    def combine_weights(self, vertex_weights, sub_graph_weights):
+        print(f"\t[ combine_weights :: start ]")
+        combined_weights = {}
+        for vertex in vertex_weights:
+            combined_weights[vertex] = vertex_weights[vertex] + sub_graph_weights.get(vertex, 0)
+            print(f"\t[ combine_weights :: vertex :: {vertex} :: combined_weight :: {combined_weights[vertex]} ]")
+        return combined_weights
+
+    def rank_arguments(self, argument_weights):
+        print(f"\t[ rank_arguments :: start ]")
+        ranked_arguments = sorted(argument_weights.items(), key=lambda item: item[1], reverse=True)
+        for rank, (vertex, weight) in enumerate(ranked_arguments, 1):
+            print(f"\t[ rank_arguments :: rank :: {rank} :: vertex :: {vertex} :: weight :: {weight} ]")
+        return ranked_arguments
 
 
 #alright! once again, same style, same acumen, boil over each and every one of those

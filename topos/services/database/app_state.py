@@ -43,7 +43,7 @@ class AppState:
     def get_driver_session(self):
         return self.driver.session(database=self.neo4j_db_name)
 
-    def get_state(self, key):
+    def get_state(self):
         return self.state
 
     def set_state(self, key, value):

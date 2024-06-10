@@ -17,12 +17,16 @@ import asyncio
 
 class TestDebateFlow(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        AppState._instance = None
         load_dotenv()  # Load environment variables
 
         self.neo4j_uri = os.getenv("NEO4J_URI")
         self.neo4j_user = os.getenv("NEO4J_USER")
         self.neo4j_password = os.getenv("NEO4J_PASSWORD")
         self.neo4j_test_database = os.getenv("NEO4J_TEST_DATABASE")
+
+        # Initialize app state with Neo4j connection details
+        self.app_state = AppState(self.neo4j_uri, self.neo4j_user, self.neo4j_password, self.neo4j_test_database)
 
         # Initialize the Neo4j connection
         self.neo4j_conn = Neo4jConnection(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
@@ -58,11 +62,11 @@ class TestDebateFlow(unittest.IsolatedAsyncioTestCase):
         async def websocket_endpoint(websocket: WebSocket):
             await websocket.accept()
 
-            app_state = {
-                "user_id": f"user_{str(uuid4())}",
-                "session_id": f"session_{str(uuid4())}",
-                "prior_ontology": []
-            }
+            app_state = AppState.get_instance()
+
+            app_state.set_state("user_id", f"user_{str(uuid4())}")
+            app_state.set_state("session_id", f"session_{str(uuid4())}")
+            app_state.set_state("prior_ontology", [])
 
             message_data = [
                 {"role": "user",
@@ -119,6 +123,9 @@ class TestDebateFlow(unittest.IsolatedAsyncioTestCase):
                 "topic": "Chess vs Checkers"
             })
             await self.debate_simulator.debate_step(websocket, data, app_state)
+
+            kl_divergences = app_state.get_value("kl_divergences", [])
+            print(f"KL-Divergences: {kl_divergences}")
 
         client = TestClient(app)
 
