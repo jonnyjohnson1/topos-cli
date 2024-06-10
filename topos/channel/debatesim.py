@@ -297,6 +297,8 @@ class DebateSimulator:
         distances = np.array(semantic_distances)
 
         # Compute the mean across all distances to form the collective distribution
+        if len(distances) == 0:
+            return np.array([0.5])  # Handle empty distributions
         collective_distribution = np.mean(distances, axis=0)
 
         return collective_distribution
@@ -315,29 +317,49 @@ class DebateSimulator:
 
         return kl_div
 
-    def parse_mermaid_to_dict(self, mermaid_str):
-        # Implement parsing mermaid syntax to dict
-        pass
+    def calculate_impact_of_contributions(self, prior_ontology, topic_embedding):
+        # List to store the impact of each contribution
+        impact_scores = []
 
-    def build_graph(self, parsed_ontology):
-        # Implement the graph building logic
-        pass
+        # Compute semantic distances for each contribution
+        semantic_distances = []
+        for ontology in prior_ontology:
+            distance = self.compute_semantic_distances(ontology, topic_embedding)
+            semantic_distances.append(distance)
 
-    def calculate_vertex_weights(self, graph):
-        # Implement the vertex weight calculation logic
-        pass
+        # Iterate over each contribution to calculate its impact
+        for i in range(len(prior_ontology)):
+            # Remove the current contribution
+            remaining_distances = semantic_distances[:i] + semantic_distances[i+1:]
 
-    def calculate_sub_graph_weights(self, graph):
-        # Implement the sub-graph weight calculation logic
-        pass
+            # Skip if remaining_distances is empty
+            if not remaining_distances:
+                impact_scores.append(0.0)
+                continue
 
-    def combine_weights(self, vertex_weights, sub_graph_weights):
-        # Implement the logic to combine weights
-        pass
+            # Aggregate the distributions to form a collective distribution without the current contribution
+            collective_distribution_without = self.aggregate_distributions(remaining_distances)
 
-    def rank_arguments(self, argument_weights):
-        # Implement the logic to rank arguments
-        pass
+            # Calculate KL-Divergence without the current contribution
+            kl_divergences_without = []
+            for distance in remaining_distances:
+                kl_divergence = self.calculate_kl_divergence([distance, 1 - distance], [collective_distribution_without, 1 - collective_distribution_without])
+                kl_divergences_without.append(kl_divergence)
+
+            # Aggregate the distributions to form a collective distribution with the current contribution
+            collective_distribution_with = self.aggregate_distributions(semantic_distances)
+
+            # Calculate KL-Divergence with the current contribution
+            kl_divergences_with = []
+            for distance in semantic_distances:
+                kl_divergence = self.calculate_kl_divergence([distance, 1 - distance], [collective_distribution_with, 1 - collective_distribution_with])
+                kl_divergences_with.append(kl_divergence)
+
+            # Calculate the difference in KL-Divergence to measure the impact of the current contribution
+            impact_score = np.mean(kl_divergences_with) - np.mean(kl_divergences_without)
+            impact_scores.append(impact_score)
+
+        return impact_scores
 
     async def think(self, topic, prior_ontology):
         print(f"\t[ think :: topic :: {topic} ]")
@@ -346,29 +368,15 @@ class DebateSimulator:
         # Embed the topic
         topic_embedding = self.embed_text(topic)
 
-        # Compute semantic distances for each contribution
-        semantic_distances = []
-        for ontology in prior_ontology:
-            distance = self.compute_semantic_distances(ontology, topic_embedding)
-            print(f"\t\t[ think :: distance :: {distance} ]")
-            semantic_distances.append(distance)
-
-        # Aggregate the distributions to form a collective distribution
-        collective_distribution = self.aggregate_distributions(semantic_distances)
-
-        # Calculate KL-Divergence for each contribution
-        kl_divergences = []
-        for distance in semantic_distances:
-            kl_divergence = self.calculate_kl_divergence([distance, 1 - distance],
-                                                         [collective_distribution, 1 - collective_distribution])
-            print(f"\t\t[ think :: kl_divergence :: {kl_divergence} ]")
-            kl_divergences.append(kl_divergence)
+        # Compute the impact of each contribution
+        impact_scores = self.calculate_impact_of_contributions(prior_ontology, topic_embedding)
+        print(f"\t[ think :: impact_scores :: {impact_scores} ]")
 
         # Store results in app_state (subkey session_id)
         app_state = AppState().get_instance()
-        app_state.set_state("kl_divergences", kl_divergences)
+        app_state.set_state("impact_scores", impact_scores)
 
-        print(f"\t[ think :: kl_divergences :: {kl_divergences} ]")
+        print(f"\t[ think :: impact_scores :: {impact_scores} ]")
 
         parsed_ontology = [self.parse_mermaid_to_dict(component) for component in prior_ontology]
         print(f"\t[ think :: parsed_ontology :: {parsed_ontology} ]")
