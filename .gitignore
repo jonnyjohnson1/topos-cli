@@ -4,6 +4,12 @@
 /topos/_conv_cache/*
 !/topos/_conv_cache/.gitignore
 
+/test/_cache/*
+!/test/_cache/.gitignore
+
+/test/_conv_cache/*
+!/test/_conv_cache/.gitignore
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -92,3 +98,4 @@ ipython_config.py
 /.DS_Store
 /_cache
 /.env
+.DS_Store

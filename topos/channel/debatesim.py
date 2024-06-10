@@ -117,10 +117,14 @@ class DebateSimulator:
             # re-roll a new message id, with 36 characters max
             message_id = str(uuid4())
 
-        # session_id = payload["session_id"]
-        # user_id = payload["user_id"]
-        user_id = app_state.get("user_id", "")
-        session_id = app_state.get("session_id", "")
+        user_id = payload.get("user_id", "")
+        session_id = payload.get("session_id", "")
+
+        # default to app state if not provided
+        if user_id == "":
+            user_id = app_state.get("user_id", "")
+        if session_id == "":
+            session_id = app_state.get("session_id", "")
 
         message_history = payload["message_history"]
         model = payload.get("model", "solar")
@@ -206,21 +210,29 @@ class DebateSimulator:
 
         system_prompt = f"{user_definition_prompt}\n{system_prompt}"
 
-        user_prompt = f""
-        if message_history:
-            # Add the message history prior to the message
-            user_prompt += '\n'.join(msg['role'] + ": " + msg['content'] for msg in message_history)
+        user_prompt = f"{message}"
 
         print(f"\t[ system prompt :: {system_prompt} ]")
         print(f"\t[ user prompt :: {user_prompt} ]")
         simp_msg_history = [{'role': 'system', 'content': system_prompt}]
 
         # Simplify message history to required format
-        for message in message_history:
-            simplified_message = {'role': message['role'], 'content': message['content']}
+        for index, message in enumerate(message_history):
+            message_role = message['role']
+            if message_role == "user":
+                message_user_id = f"{message['data']['user_id']}:"
+                message_content = message['data']['content']
+            else:
+                message_user_id = ""
+                message_content = message['content']
+
+            simplified_message = {'role': message['role'], 'content': f"{message_user_id}{message_content}"}
             if 'images' in message:
                 simplified_message['images'] = message['images']
+
             simp_msg_history.append(simplified_message)
+
+        simp_msg_history.append({'role': 'user', 'content': f"{user_id}:{user_prompt}"})
 
         # Processing the chat
         output_combined = ""
