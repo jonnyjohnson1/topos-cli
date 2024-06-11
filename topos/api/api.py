@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from ..config import setup_config, get_ssl_certificates
 from .websocket_handlers import router as websocket_router
 from .api_routes import router as api_router
+from .p2p_chat_routes import router as p2p_chat_router
 import uvicorn
 
 # Create the FastAPI application instance
@@ -13,6 +14,7 @@ setup_config(app)
 # Include routers from other parts of the application
 app.include_router(api_router)
 app.include_router(websocket_router)
+app.include_router(p2p_chat_router)
 
 """
 
