@@ -16,6 +16,7 @@ class SessionManager:
         self.user_sessions: Dict[str, str] = {}
 
     def add_session(self, session_id: str, user_id: str, websocket: WebSocket):
+        print(f"[ adding {session_id} to active_sessions ]")
         if session_id not in self.active_sessions:
             self.active_sessions[session_id] = []
         self.active_sessions[session_id].append((user_id, websocket))
@@ -27,6 +28,7 @@ class SessionManager:
         return self.user_sessions
 
     def add_user_session(self, user_id: str, session_id: str):
+        print(f"[ adding {user_id} to user_sessions ]")
         self.user_sessions[user_id] = session_id
 
 session_manager = SessionManager()
@@ -81,6 +83,7 @@ async def handle_client(websocket: WebSocket, session_manager: SessionManager):
                     session_manager.add_session(session_id, user_id, websocket)
                     session_manager.add_user_session(user_id, session_id)
                     print(session_manager.get_active_sessions()) # shows value
+                    active_sessions = session_manager.get_active_sessions()
 
                     prompt_message = f"{host_name} created the chat"
                     data = {
@@ -97,7 +100,8 @@ async def handle_client(websocket: WebSocket, session_manager: SessionManager):
                     username = payload['username']
                     active_sessions = session_manager.get_active_sessions()
                     print(session_id)
-                    print(active_sessions) # shows empty when client connects
+                    print("ACTIVE SESSIONS: ", session_manager.get_active_sessions())
+                    print("ACTIVE SESSIONS: ", active_sessions) # shows empty when client connects
                     print(session_id in active_sessions)
                     if session_id in active_sessions:
                         print(f"[ {username} joined chat :: session_id {session_id} ]")
@@ -157,6 +161,8 @@ async def handle_disconnect(websocket, session_manager):
 
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket, session_manager: SessionManager = Depends(lambda: session_manager)):
+    print("[ client connected :: preparing setup ]")
+    print(f" current connected sessions :: {session_manager.get_active_sessions()}")
     await handle_client(websocket, session_manager)
 
 

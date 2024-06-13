@@ -31,27 +31,33 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     entity_text_counter = Counter()
     emotion_counter = Counter()
 
-    # Initialize role-based counters
-    named_entity_counter_per_role = defaultdict(Counter)
-    entity_text_counter_per_role = defaultdict(Counter)
-    emotion_counter_per_role = defaultdict(Counter)
+    # Initialize user-based counters
+    named_entity_counter_per_user = defaultdict(Counter)
+    entity_text_counter_per_user = defaultdict(Counter)
+    emotion_counter_per_user = defaultdict(Counter)
 
     # Extract counts
     for conversation_id, messages in conv_data.items():
+        print(messages)
         for message_id, content in messages.items():
+            print(content)
+            print(content.keys())
             role = content['role']
+            user = role
+            if role == "user" and 'user_name' in content:
+                user =  content['user_name']
             base_analysis = content['in_line']['base_analysis']
             for entity_type, entities in base_analysis.items():
                 named_entity_counter[entity_type] += len(entities)
-                named_entity_counter_per_role[role][entity_type] += len(entities)
+                named_entity_counter_per_user[user][entity_type] += len(entities)
                 for entity in entities:
                     entity_text_counter[str(entity['text'])] += 1
-                    entity_text_counter_per_role[role][str(entity['text'])] += 1
+                    entity_text_counter_per_user[user][str(entity['text'])] += 1
             
             emotions = content['commenter']['base_analysis']['emo_27']
             for emotion in emotions:
                 emotion_counter[emotion['label']] += 1
-                emotion_counter_per_role[role][emotion['label']] += 1
+                emotion_counter_per_user[user][emotion['label']] += 1
 
     # Evocations equals num of each entity
     # print("Named Entity Count:")
@@ -65,19 +71,19 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     # print("\nEmotion Count:")
     # print(emotion_counter)            # also get a population count of all the emotions that were invoked in the conversation
 
-    
+    print(emotion_counter_per_user)
     # Convert Counter objects to dictionaries
     named_entity_dict = {
         "totals": dict(named_entity_counter),
-        "per_role": {role: dict(counter) for role, counter in named_entity_counter_per_role.items()}
+        "per_role": {user: dict(counter) for user, counter in named_entity_counter_per_user.items()}
     }
     entity_text_dict = {
         "totals": dict(entity_text_counter),
-        "per_role": {role: dict(counter) for role, counter in entity_text_counter_per_role.items()}
+        "per_role": {user: dict(counter) for user, counter in entity_text_counter_per_user.items()}
     }
     emotion_dict = {
         "totals": dict(emotion_counter),
-        "per_role": {role: dict(counter) for role, counter in emotion_counter_per_role.items()}
+        "per_role": {user: dict(counter) for user, counter in emotion_counter_per_user.items()}
     }
 
     # Create the final dictionary

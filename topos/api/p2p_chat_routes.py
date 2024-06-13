@@ -31,6 +31,9 @@ async def process_message(request: Request):
     message_history = payload.get("message_history")
     current_topic = payload.get("topic", "Unknown")
     processing_config = payload.get("processing_config", {})
+    user_id = payload.get("user_id", {})
+    user_name = payload.get("user_name", "user") # let's just use the username for now to use to pull in the chatroom information
+    role = payload.get("role", "user")
 
     # Set default values if any key is missing or if processing_config is None
     default_config = {
@@ -73,7 +76,9 @@ async def process_message(request: Request):
             dummy_data = {
                 message_id : 
                     {
-                    # 'role': role,
+                    'user_name': user_name,
+                    'user_id': user_id,
+                    'role': role,
                     'timestamp': datetime.now(), 
                     'message': message
                 }}
@@ -96,14 +101,18 @@ async def process_message(request: Request):
         conv_cache_manager.save_to_cache(conversation_id, {
             message_id : 
                 {
-                # 'role': role,
+                'user_name': user_name,
+                'user_id': user_id,
+                'role': role,
                 'message': message, 
                 'timestamp': datetime.now(), 
             }})
         dummy_data = {
             message_id : 
                 {
-                # 'role': role,
+                'user_name': user_name,
+                'user_id': user_id,
+                'role': role,
                 'message': message, 
                 'timestamp': datetime.now(), 
             }}  # Replace with actual processing logic
