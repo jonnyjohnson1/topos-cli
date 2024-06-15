@@ -1,17 +1,25 @@
 import unittest
+
+from scipy.stats import hmean, trim_mean
 from sentence_transformers import CrossEncoder
 import sentencepiece  # Ensure sentencepiece is installed
 import google.protobuf  # Ensure protobuf is installed
 from nltk.tokenize import sent_tokenize
+import numpy as np
 
 class TestArgumentSegmentation(unittest.TestCase):
 
     def setUp(self):
         # Initialize the Cross-Encoder model
-        self.model = CrossEncoder("cross-encoder/nli-deberta-v3-base")
+        # self.model = CrossEncoder("cross-encoder/nli-deberta-v3-base")
+        self.model = CrossEncoder("cross-encoder/nli-deberta-v3-large")
+        # self.model = CrossEncoder("cross-encoder/nli-roberta-large")
+        # self.model = CrossEncoder("cross-encoder/nli-mpnet-base-v2")
+        # self.model = CrossEncoder("cross-encoder/stsb-roberta-large")
+        # self.model = CrossEncoder("cross-encoder/roberta-large")
 
-        # Example long argument for the affirmative side of the topic "Chess is better than checkers"
-        self.argument_sentences = [
+        # Example 1: "Chess is better than checkers"
+        self.chess_sentences = [
             "Chess is a game of deeper strategy compared to checkers.",
             "It offers a complexity that requires players to think several moves ahead, promoting strategic thinking and planning skills.",
             "Each piece in chess has its own unique moves and capabilities, unlike the uniform pieces in checkers, adding layers of strategy and tactics.",
@@ -25,29 +33,56 @@ class TestArgumentSegmentation(unittest.TestCase):
             "This global recognition and the opportunities for competition at all levels make chess a more engaging and rewarding game for those who enjoy not only playing but also watching and studying the game."
         ]
 
-        self.argument_text = """Chess is a game of deeper strategy compared to checkers.
-        It offers a complexity that requires players to think several moves ahead, promoting strategic thinking and planning skills.
-        Each piece in chess has its own unique moves and capabilities, unlike the uniform pieces in checkers, adding layers of strategy and tactics.
-        Furthermore, chess has a rich history and cultural significance that checkers lacks.
-        The game has been played by kings and commoners alike for centuries and has influenced various aspects of art, literature, and even politics.
-        This cultural depth adds to the enjoyment and appreciation of the game.
-        Chess also offers more varied and challenging gameplay.
-        The opening moves alone in chess provide a nearly infinite number of possibilities, leading to different game progressions each time.
-        Checkers, by contrast, has a more limited set of opening moves, which can make the game feel repetitive over time.
-        Finally, chess is recognized globally as a competitive sport with international tournaments and rankings.
-        This global recognition and the opportunities for competition at all levels make chess a more engaging and rewarding game for those who enjoy not only playing but also watching and studying the game."""
+        self.chess_text = """Chess is a game of deeper strategy compared to checkers.
+                It offers a complexity that requires players to think several moves ahead, promoting strategic thinking and planning skills.
+                Each piece in chess has its own unique moves and capabilities, unlike the uniform pieces in checkers, adding layers of strategy and tactics.
+                Furthermore, chess has a rich history and cultural significance that checkers lacks.
+                The game has been played by kings and commoners alike for centuries and has influenced various aspects of art, literature, and even politics.
+                This cultural depth adds to the enjoyment and appreciation of the game.
+                Chess also offers more varied and challenging gameplay.
+                The opening moves alone in chess provide a nearly infinite number of possibilities, leading to different game progressions each time.
+                Checkers, by contrast, has a more limited set of opening moves, which can make the game feel repetitive over time.
+                Finally, chess is recognized globally as a competitive sport with international tournaments and rankings.
+                This global recognition and the opportunities for competition at all levels make chess a more engaging and rewarding game for those who enjoy not only playing but also watching and studying the game."""
 
-    def test_segmentation_sentences(self):
-        print("\nTesting with individual sentences:\n")
-        self.run_segmentation_test(self.argument_sentences)
+        # Example 2: "Reading is better than watching"
+        self.reading_sentences = [
+            "Reading is a more engaging activity compared to watching.",
+            "It stimulates the imagination and enhances cognitive functions in ways that watching cannot.",
+            "Books often provide a deeper understanding of characters and plot, allowing for a more immersive experience.",
+            "Furthermore, reading improves vocabulary and language skills, which is not as effectively achieved through watching.",
+            "Reading also promotes better concentration and focus, as it requires active participation from the reader.",
+            "Finally, reading is a more personal experience, allowing individuals to interpret and visualize the story in their own unique way."
+        ]
 
-    def test_segmentation_text_block(self):
-        print("\nTesting with text block:\n")
+        self.reading_text = """Reading is a more engaging activity compared to watching.
+                It stimulates the imagination and enhances cognitive functions in ways that watching cannot.
+                Books often provide a deeper understanding of characters and plot, allowing for a more immersive experience.
+                Furthermore, reading improves vocabulary and language skills, which is not as effectively achieved through watching.
+                Reading also promotes better concentration and focus, as it requires active participation from the reader.
+                Finally, reading is a more personal experience, allowing individuals to interpret and visualize the story in their own unique way."""
+
+    def test_chess_sentences(self):
+        print("\nTesting with Chess sentences:\n")
+        self.run_segmentation_test(self.chess_sentences, "chess")
+
+    def test_chess_text_block(self):
+        print("\nTesting with Chess text block:\n")
         # Split the text block into sentences
-        argument = sent_tokenize(self.argument_text)
-        self.run_segmentation_test(argument)
+        argument = sent_tokenize(self.chess_text)
+        self.run_segmentation_test(argument, "chess")
 
-    def run_segmentation_test(self, argument):
+    def test_reading_sentences(self):
+        print("\nTesting with Reading sentences:\n")
+        self.run_segmentation_test(self.reading_sentences, "reading")
+
+    def test_reading_text_block(self):
+        print("\nTesting with Reading text block:\n")
+        # Split the text block into sentences
+        argument = sent_tokenize(self.reading_text)
+        self.run_segmentation_test(argument, "reading")
+
+    def run_segmentation_test(self, argument, example_type):
         # Step 2: Create Sentence Pairs
         sentence_pairs = []
         for i in range(len(argument) - 1):
@@ -76,8 +111,17 @@ class TestArgumentSegmentation(unittest.TestCase):
         self.assertEqual(len(differentiation_scores), len(scores))
         print("Differentiation scores calculated for each pair.")
 
+        # Determine threshold using the harmonic mean
+        # threshold = hmean(differentiation_scores)
+
         # Determine threshold dynamically if needed
-        threshold = sum(differentiation_scores) / len(differentiation_scores)  # Example: average differentiation score
+        # threshold = sum(differentiation_scores) / len(differentiation_scores)  # Example: average differentiation score
+
+        # Calculate the trimmed mean, trimming 10% of the smallest and largest values
+        threshold = trim_mean(differentiation_scores, 0.1)
+
+        # Calculate the median
+        # threshold = np.median(differentiation_scores)
 
         print(f"\nThreshold: {threshold}")
 
@@ -106,25 +150,48 @@ class TestArgumentSegmentation(unittest.TestCase):
             print(f"Segment {i}: {segment}")
 
         # Expected segmentation result based on the example argument
-        expected_segments = [
-            ["Chess is a game of deeper strategy compared to checkers."],
-            [
-                "It offers a complexity that requires players to think several moves ahead, promoting strategic thinking and planning skills.",
-                "Each piece in chess has its own unique moves and capabilities, unlike the uniform pieces in checkers, adding layers of strategy and tactics.",
-                "Furthermore, chess has a rich history and cultural significance that checkers lacks."
+        expected_segments = {
+            "chess": [
+                ["Chess is a game of deeper strategy compared to checkers."],
+                [
+                    "It offers a complexity that requires players to think several moves ahead, promoting strategic thinking and planning skills.",
+                    "Each piece in chess has its own unique moves and capabilities, unlike the uniform pieces in checkers, adding layers of strategy and tactics.",
+                    "Furthermore, chess has a rich history and cultural significance that checkers lacks."
+                ],
+                [
+                    "The game has been played by kings and commoners alike for centuries and has influenced various aspects of art, literature, and even politics."],
+                ["This cultural depth adds to the enjoyment and appreciation of the game.",
+                 "Chess also offers more varied and challenging gameplay."],
+                [
+                    "The opening moves alone in chess provide a nearly infinite number of possibilities, leading to different game progressions each time.",
+                    "Checkers, by contrast, has a more limited set of opening moves, which can make the game feel repetitive over time.",
+                    "Finally, chess is recognized globally as a competitive sport with international tournaments and rankings."
+                ],
+                [
+                    "This global recognition and the opportunities for competition at all levels make chess a more engaging and rewarding game for those who enjoy not only playing but also watching and studying the game."]
             ],
-            ["The game has been played by kings and commoners alike for centuries and has influenced various aspects of art, literature, and even politics."],
-            ["This cultural depth adds to the enjoyment and appreciation of the game.", "Chess also offers more varied and challenging gameplay."],
-            [
-                "The opening moves alone in chess provide a nearly infinite number of possibilities, leading to different game progressions each time.",
-                "Checkers, by contrast, has a more limited set of opening moves, which can make the game feel repetitive over time.",
-                "Finally, chess is recognized globally as a competitive sport with international tournaments and rankings."
-            ],
-            ["This global recognition and the opportunities for competition at all levels make chess a more engaging and rewarding game for those who enjoy not only playing but also watching and studying the game."]
-        ]
+            "reading": [
+                ["Reading is a more engaging activity compared to watching."],
+                [
+                    "It stimulates the imagination and enhances cognitive functions in ways that watching cannot.",
+                    "Books often provide a deeper understanding of characters and plot, allowing for a more immersive experience."
+                ],
+                [
+                    "Furthermore, reading improves vocabulary and language skills, which is not as effectively achieved through watching."],
+                [
+                    "Reading also promotes better concentration and focus, as it requires active participation from the reader.",
+                    "Finally, reading is a more personal experience, allowing individuals to interpret and visualize the story in their own unique way."
+                ]
+            ]
+        }
+
+        if "chess" in argument[0].lower():
+            expected = expected_segments["chess"]
+        else:
+            expected = expected_segments["reading"]
 
         # Verify the segmentation result matches the expected result
-        self.assertEqual(segments, expected_segments)
+        self.assertEqual(segments, expected)
         print("Segments match the expected output.")
 
 if __name__ == '__main__':
