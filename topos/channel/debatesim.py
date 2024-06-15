@@ -162,6 +162,10 @@ class DebateSimulator:
 
         app_state.set_state("prior_ontology", prior_ontology)
 
+        # algo approach(es):
+
+        # ontological feature detection
+
         # break previous messages into ontology
         # cache ontology
         # ** use diffuser to spot differentials
@@ -169,6 +173,11 @@ class DebateSimulator:
         # break current message into ontology
         # ** BLEU score a 10x return on the ontology
         # read ontology + newest
+
+        # topic detection
+
+        #
+
 
         await self.think(topic="Chess vs Checkers", prior_ontology=prior_ontology)
 
@@ -212,6 +221,7 @@ class DebateSimulator:
                                     [moderator]: "I think the topic might be XYZ" 
                                     ------
                                     """
+
 
         if current_topic == "unknown topic":
             system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style, in the format of:\n
