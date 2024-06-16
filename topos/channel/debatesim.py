@@ -17,6 +17,7 @@ from scipy.stats import entropy
 
 from fastapi import WebSocket, WebSocketDisconnect
 from topos.FC.semantic_compression import SemanticCompression
+from ..FC.argument_detection import ArgumentDetection
 from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
 from ..generations.ollama_chat import stream_chat
@@ -174,12 +175,9 @@ class DebateSimulator:
         # ** BLEU score a 10x return on the ontology
         # read ontology + newest
 
-        # topic detection
+        # await self.think(topic="Chess vs Checkers", prior_ontology=prior_ontology)
 
-        #
-
-
-        await self.think(topic="Chess vs Checkers", prior_ontology=prior_ontology)
+        await self.reflect(topic=current_topic, message_history=message_history, llm_model="ollama:dolphin-llama3")
 
 
         # topic3:
@@ -236,7 +234,7 @@ class DebateSimulator:
 
         user_prompt = f"{message}"
 
-        print(f"\t[ system prompt :: {system_prompt} ]")
+        # print(f"\t[ system prompt :: {system_prompt} ]")
         print(f"\t[ user prompt :: {user_prompt} ]")
         simp_msg_history = [{'role': 'system', 'content': system_prompt}]
 
@@ -273,12 +271,12 @@ class DebateSimulator:
             print(f"\t\t[ error in decoding :: {output_combined} ]")
 
         # Fetch semantic category from the output
-        semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
+        semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key="ollama")
         semantic_category = semantic_compression.fetch_semantic_category(output_combined)
 
         # Send the final completed message
         await websocket.send_json(
-            {"status": "completed", "response": output_combined, "semantic_category": semantic_category,
+            {"status": "completed", "response": output_combined, "semantic_category": semantic_category.content,
              "completed": True})
 
     def embed_text(self, text):
@@ -488,6 +486,60 @@ class DebateSimulator:
             print(f"\t[ rank_arguments :: rank :: {rank} :: vertex :: {vertex} :: weight :: {weight} ]")
         return ranked_arguments
 
+    async def reflect(self, topic, message_history, llm_model):
+        print(f"\t[ reflect :: topic :: {topic} ]")
+
+        argument_detection = ArgumentDetection("ollama", llm_model)
+
+        # Step 1: Gather message history for specific users
+        user_messages = {}
+        for message in message_history:
+            user_id = message['data']['user_id']
+            content = message['data']['content']
+            if user_id not in user_messages:
+                user_messages[user_id] = []
+            user_messages[user_id].append(content)
+
+        print(f"\t[ reflect :: user_messages :: {user_messages} ]")
+
+        should_continue = False
+
+        # Step 2: Cluster analysis for each user's messages
+        clustered_messages = {}
+        for user_id, messages in user_messages.items():
+            if (len(messages) > 1):
+                print(f"\t[ reflect :: Clustering messages for user {user_id} ]")
+                clusters = argument_detection.cluster_sentences(messages, distance_threshold=1.45)
+                clustered_messages[user_id] = clusters
+
+        print(f"\t[ reflect :: clustered_messages :: {clustered_messages} ]")
+
+        if len(clustered_messages.keys()) > 0:
+            # Step 3: Run WEPCC on each cluster
+            wepcc_results = {}
+            for user_id, clusters in clustered_messages.items():
+                wepcc_results[user_id] = {}
+                for cluster_id, cluster_sentences in clusters.items():
+                    print(f"\t[ reflect :: Running WEPCC for user {user_id}, cluster {cluster_id} ]")
+                    warrant, evidence, persuasiveness_justification, claim, counterclaim = argument_detection.fetch_argument_definition(
+                        cluster_sentences)
+                    wepcc_results[user_id][cluster_id] = {
+                        'warrant': warrant,
+                        'evidence': evidence,
+                        'persuasiveness_justification': persuasiveness_justification,
+                        'claim': claim,
+                        'counterclaim': counterclaim
+                    }
+
+                print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
+
+                # Here you would typically update the app state or further process the WEPCC results
+                app_state = AppState().get_instance()
+                app_state.set_state("wepcc_results", wepcc_results)
+
+        # You can also add logic to evaluate the debate, score the arguments, and determine the winning side based on the WEPCC results.
+
+        print(f"\t[ reflect :: Completed ]")
 
 #alright! once again, same style, same acumen, boil over each and every one of those
 
