@@ -1,10 +1,11 @@
 import unittest
 from topos.FC.argument_detection import ArgumentDetection
 
+
 class TestArgumentSegmentation(unittest.TestCase):
 
     def setUp(self):
-        self.argument_detection = ArgumentDetection()
+        self.argument_detection = ArgumentDetection(api_key="your_api_key_here", model="ollama:dolphin-llama3")
 
         # Example sentences for the debate topic
         self.debate_sentences = [
@@ -135,6 +136,25 @@ class TestArgumentSegmentation(unittest.TestCase):
         self.assertEqual(actual_debate_segments, expected_segments["debate"])
         self.assertEqual(actual_chess_segments, expected_segments["chess"])
         self.assertEqual(actual_reading_segments, expected_segments["reading"])
+
+    def test_wepcc_extraction(self):
+        clusters = {
+            "debate": self.argument_detection.cluster_sentences(self.debate_sentences, distance_threshold=1.45),
+            "chess": self.argument_detection.cluster_sentences(self.chess_sentences, distance_threshold=1.45),
+            "reading": self.argument_detection.cluster_sentences(self.reading_sentences, distance_threshold=1.45)
+        }
+
+        for topic, clusters in clusters.items():
+            for cluster_id, cluster_sentences in clusters.items():
+                warrant, evidence, persuasiveness, claim, counterclaim = self.argument_detection.fetch_argument_definition(cluster_sentences)
+
+                print(f"\n[INFO] WEPCC for {topic} - Cluster {cluster_id}:")
+                print(f"Warrant: {warrant}")
+                print(f"Evidence: {evidence}")
+                print(f"Persuasiveness: {persuasiveness}")
+                print(f"Claim: {claim}")
+                print(f"Counterclaim: {counterclaim}")
+                print("-" * 80)
 
 if __name__ == '__main__':
     unittest.main()
