@@ -155,7 +155,9 @@ class TestArgumentSegmentation(unittest.TestCase):
         print("Differentiation scores calculated for each pair.")
 
         # Calculate the trimmed mean, trimming 10% of the smallest and largest values
-        threshold = trim_mean(differentiation_scores, 0.1)
+        # threshold = trim_mean(differentiation_scores, 0.1)
+
+        threshold = hmean(differentiation_scores)
 
         print(f"\nThreshold: {threshold}")
 
