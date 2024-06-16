@@ -1,64 +1,36 @@
+from sklearn.cluster import AgglomerativeClustering
 import numpy as np
-from sentence_transformers import CrossEncoder
-from scipy.cluster.hierarchy import linkage, fcluster
-from topos.FC.semantic_compression import SemanticCompression
+from sentence_transformers import SentenceTransformer
 
 class ArgumentDetection:
-    def __init__(self, api_key):
-        model = "dolphin-llama3"
-        self.semantic_compression = SemanticCompression(api_key=api_key, model=f"ollama:{model}")
+    def __init__(self):
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
 
-    def get_semantic_category(self, sentence):
-        print(f"[INFO] Fetching semantic category for sentence: {sentence[:30]}...")
-        category = self.semantic_compression.fetch_semantic_category(sentence)
-        print(f"[INFO] Semantic category: {category.content}")
-        return category.content
+    def get_embeddings(self, sentences):
+        print("[INFO] Embedding sentences using SentenceTransformer...")
+        embeddings = self.model.encode(sentences)
+        print("[INFO] Sentence embeddings obtained.")
+        return embeddings
 
-    def calculate_semantic_distance(self, summary1, summary2):
-        distance = self.semantic_compression.get_semantic_distance(summary1, summary2)
-        print(f"[INFO] Calculating distance between \"{summary1}\" and \"{summary2}\" -> Distance: {distance}")
-        return distance
-
-    def calculate_similarity_scores(self, sentences):
-        print("[INFO] Calculating similarity scores using CrossEncoder...")
-        model = CrossEncoder('cross-encoder/nli-deberta-v3-base')
-        pairs = [(sentences[i], sentences[i + 1]) for i in range(len(sentences) - 1)]
-        scores = model.predict(pairs)
-        print("[INFO] Similarity scores obtained:")
-        for i, score in enumerate(scores):
-            print(f"[INFO] Pair {i + 1}: \"{pairs[i][0][:30]}...\" <-> \"{pairs[i][1][:30]}...\" :: Score: {score}")
-        return scores
-
-    def cluster_sentences(self, sentences):
-        print("[INFO] Creating summaries for sentences...")
-        summaries = [self.get_semantic_category(sentence) for sentence in sentences]
-        distance_matrix = np.zeros((len(summaries), len(summaries)))
-
+    def calculate_distance_matrix(self, embeddings):
         print("[INFO] Calculating semantic distance matrix...")
-        for i in range(len(summaries)):
-            for j in range(len(summaries)):
+        distance_matrix = np.zeros((len(embeddings), len(embeddings)))
+        for i in range(len(embeddings)):
+            for j in range(len(embeddings)):
                 if i != j:
-                    distance_matrix[i][j] = self.calculate_semantic_distance(summaries[i], summaries[j])
-
+                    distance_matrix[i][j] = np.linalg.norm(embeddings[i] - embeddings[j])
         print("[INFO] Distance matrix calculated.")
-        print(distance_matrix)
+        return distance_matrix
 
-        print("[INFO] Calculating similarity scores for edge detection...")
-        similarity_scores = self.calculate_similarity_scores(sentences)
+    def cluster_sentences(self, sentences, distance_threshold=1.5):  # Adjust distance_threshold here
+        embeddings = self.get_embeddings(sentences)
+        distance_matrix = self.calculate_distance_matrix(embeddings)
 
-        # Apply similarity score edge detection to adjust distances
-        print("[INFO] Adjusting distances based on similarity scores...")
-        for i in range(len(similarity_scores)):
-            max_score = np.max(similarity_scores[i])
-            if max_score < 0.5:  # Example threshold for low similarity
-                distance_matrix[i][i + 1] += 2  # Increase distance if similarity score is low
-
-        print("[INFO] Adjusted distance matrix:")
-        print(distance_matrix)
-
+        # Perform Agglomerative Clustering based on the distance matrix
         print("[INFO] Performing hierarchical clustering...")
-        Z = linkage(distance_matrix, method='ward')
-        clusters = fcluster(Z, t=0.8, criterion='distance')  # Adjusted threshold
+        clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold, metric='euclidean', linkage='average')
+        clusters = clustering.fit_predict(distance_matrix)
+
         print("[INFO] Clustering complete. Clusters assigned:")
         for i, cluster in enumerate(clusters):
             print(f"Sentence {i + 1} is in cluster {cluster}")
@@ -71,25 +43,51 @@ class ArgumentDetection:
 
         return cluster_dict
 
-# Example usage:
-if __name__ == "__main__":
-    api_key = "your-api-key"
-    argument_detector = ArgumentDetection(api_key)
+    def run_tests(self):
+        examples = {
+            "Debate": [
+                "Social media platforms have become the primary source of information for many people.",
+                "They have the power to influence public opinion and election outcomes.",
+                "Government regulation could help in mitigating the spread of false information.",
+                "On the other hand, government intervention might infringe on freedom of speech.",
+                "Social media companies are already taking steps to address misinformation.",
+                "Self-regulation is preferable as it avoids the risks of government overreach.",
+                "The lack of regulation has led to the proliferation of harmful content and echo chambers."
+            ],
+            "Chess": [
+                "Chess is a game of deeper strategy compared to checkers.",
+                "It offers a complexity that requires players to think several moves ahead, promoting strategic thinking and planning skills.",
+                "Each piece in chess has its own unique moves and capabilities, unlike the uniform pieces in checkers, adding layers of strategy and tactics.",
+                "Furthermore, chess has a rich history and cultural significance that checkers lacks.",
+                "The game has been played by kings and commoners alike for centuries and has influenced various aspects of art, literature, and even politics.",
+                "This cultural depth adds to the enjoyment and appreciation of the game.",
+                "Chess also offers more varied and challenging gameplay.",
+                "The opening moves alone in chess provide a nearly infinite number of possibilities, leading to different game progressions each time.",
+                "Checkers, by contrast, has a more limited set of opening moves, which can make the game feel repetitive over time.",
+                "Finally, chess is recognized globally as a competitive sport with international tournaments and rankings.",
+                "This global recognition and the opportunities for competition at all levels make chess a more engaging and rewarding game for those who enjoy not only playing but also watching and studying the game."
+            ],
+            "Reading": [
+                "Reading is a more engaging activity compared to watching.",
+                "It stimulates the imagination and enhances cognitive functions in ways that watching cannot.",
+                "Books often provide a deeper understanding of characters and plot, allowing for a more immersive experience.",
+                "Furthermore, reading improves vocabulary and language skills, which is not as effectively achieved through watching.",
+                "Reading also promotes better concentration and focus, as it requires active participation from the reader.",
+                "Finally, reading is a more personal experience, allowing individuals to interpret and visualize the story in their own unique way."
+            ]
+        }
 
-    # Example sentences for the debate
-    debate_sentences = [
-        "Social media platforms have become the primary source of information for many people.",
-        "They have the power to influence public opinion and election outcomes.",
-        "Government regulation could help in mitigating the spread of false information.",
-        "On the other hand, government intervention might infringe on freedom of speech.",
-        "Social media companies are already taking steps to address misinformation.",
-        "Self-regulation is preferable as it avoids the risks of government overreach.",
-        "The lack of regulation has led to the proliferation of harmful content and echo chambers."
-    ]
+        for topic, sentences in examples.items():
+            print(f"[INFO] Running test for: {topic}")
+            clusters = self.cluster_sentences(sentences, distance_threshold=1.45)  # Adjust the threshold value here
+            print(f"[INFO] Final Clusters for {topic}:")
+            for cluster_id, cluster_sentences in clusters.items():
+                print(f"Cluster {cluster_id}:")
+                for sentence in cluster_sentences:
+                    print(f"  - {sentence}")
+            print("-" * 80)
 
-    clusters = argument_detector.cluster_sentences(debate_sentences)
-    print("[INFO] Final Clusters:")
-    for cluster_id, sentences in clusters.items():
-        print(f"Cluster {cluster_id}:")
-        for sentence in sentences:
-            print(f"  - {sentence}")
+
+# Example usage
+argument_detection = ArgumentDetection()
+argument_detection.run_tests()
