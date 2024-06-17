@@ -554,77 +554,60 @@ class DebateSimulator:
         # Initialize phase similarity and cluster weight modulator
         cluster_weight_modulator = {user_id: {} for user_id in user_messages.keys()}
 
-        # Step 4: Match User A's Counterclaims with User B's Claims
-        for userA in user_messages.keys():
-            print(f"\t[ reflect :: Processing counterclaims for user {userA} ]")
-            if userA in wepcc_results and len(wepcc_results[userA]) > 0:
-                for cluster_idA, wepccA in wepcc_results[userA].items():
-                    phase_sim_A = []
-                    for userB in user_messages.keys():
-                        if userA != userB and userB in wepcc_results and len(wepcc_results[userB]) > 0:
-                            for cluster_idB, wepccB in wepcc_results[userB].items():
-                                # Calculate cosine similarity between User A's counterclaim and User B's claim
-                                counterclaim_embedding = self.fast_embedding_model.encode(wepccA['counterclaim'])
-                                claim_embedding = self.fast_embedding_model.encode(wepccB['claim'])
-                                sim_score = cosine_similarity([counterclaim_embedding], [claim_embedding])[0][0]
-                                print(
-                                    f"\t[ reflect :: Sim score between User A's counterclaim (cluster {cluster_idA}) and User B's claim (cluster {cluster_idB}) :: {sim_score} ]")
-                                if sim_score > cutoff:
-                                    phase_sim_A.append((sim_score, cluster_idB))
+        # Step 4: Match each user's Counterclaims with all other users' Claims
+        for user_idA, clustersA in wepcc_results.items():
+            for cluster_idA, wepccA in clustersA.items():
+                phase_sim_A = []
+                for user_idB, clustersB in wepcc_results.items():
+                    if user_idA != user_idB:
+                        for cluster_idB, wepccB in clustersB.items():
+                            # Calculate cosine similarity between counterclaims and claims
+                            counterclaim_embedding = self.fast_embedding_model.encode(wepccA['counterclaim'])
+                            claim_embedding = self.fast_embedding_model.encode(wepccB['claim'])
+                            sim_score = cosine_similarity([counterclaim_embedding], [claim_embedding])[0][0]
+                            print(
+                                f"\t[ reflect :: Sim score between {user_idA}'s counterclaim (cluster {cluster_idA}) and {user_idB}'s claim (cluster {cluster_idB}) :: {sim_score} ]")
+                            if sim_score > cutoff:
+                                phase_sim_A.append((sim_score, cluster_idB, user_idB))
 
-                    for sim_score, cluster_idB in phase_sim_A:
-                        if cluster_idB not in cluster_weight_modulator[userA]:
-                            cluster_weight_modulator[userA][cluster_idB] = 0
-                        cluster_weight_modulator[userA][cluster_idB] += (sim_score - cutoff) / (1 - cutoff)
-                        print(
-                            f"\t[ reflect :: Updated cluster weight modulator for User A (cluster {cluster_idB}) :: {cluster_weight_modulator[userA][cluster_idB]} ]")
-
-        # Step 5: Match User B's Counterclaims with User A's Claims
-        for userB in user_messages.keys():
-            print(f"\t[ reflect :: Processing counterclaims for user {userB} ]")
-            if userB in wepcc_results and len(wepcc_results[userB]) > 0:
-                for cluster_idB, wepccB in wepcc_results[userB].items():
-                    phase_sim_B = []
-                    for userA in user_messages.keys():
-                        if userA != userB and userA in wepcc_results and len(wepcc_results[userA]) > 0:
-                            for cluster_idA, wepccA in wepcc_results[userA].items():
-                                # Calculate cosine similarity between User B's counterclaim and User A's claim
-                                counterclaim_embedding = self.fast_embedding_model.encode(wepccB['counterclaim'])
-                                claim_embedding = self.fast_embedding_model.encode(wepccA['claim'])
-                                sim_score = cosine_similarity([counterclaim_embedding], [claim_embedding])[0][0]
-                                print(
-                                    f"\t[ reflect :: Sim score between User B's counterclaim (cluster {cluster_idB}) and User A's claim (cluster {cluster_idA}) :: {sim_score} ]")
-                                if sim_score > cutoff:
-                                    phase_sim_B.append((sim_score, cluster_idA))
-
-                    for sim_score, cluster_idA in phase_sim_B:
-                        if cluster_idA not in cluster_weight_modulator[userB]:
-                            cluster_weight_modulator[userB][cluster_idA] = 0
-                        cluster_weight_modulator[userB][cluster_idA] += (sim_score - cutoff) / (1 - cutoff)
-                        print(
-                            f"\t[ reflect :: Updated cluster weight modulator for User B (cluster {cluster_idA}) :: {cluster_weight_modulator[userB][cluster_idA]} ]")
+                for sim_score, cluster_idB, user_idB in phase_sim_A:
+                    if cluster_idA not in cluster_weight_modulator[user_idA]:
+                        cluster_weight_modulator[user_idA][cluster_idA] = 0
+                    cluster_weight_modulator[user_idA][cluster_idA] += (sim_score - cutoff) / (1 - cutoff)
+                    print(
+                        f"\t[ reflect :: Updated cluster weight modulator for {user_idA} (cluster {cluster_idA}) :: {cluster_weight_modulator[user_idA][cluster_idA]} ]")
 
         # Final aggregation and ranking
         aggregated_scores = {}
         for user_id, weight_mods in cluster_weight_modulator.items():
             total_score = 0
             for cluster_id, modulator in weight_mods.items():
-                persuasiveness_score = float(
-                    wepcc_results[user_id][cluster_id]['persuasiveness_justification']['content'][
-                        'persuasiveness_score'])
-                addressed_score = (1 - modulator) * persuasiveness_score
-                total_score += addressed_score
-                print(f"\t[ reflect :: Addressed score for User {user_id}, Cluster {cluster_id} :: {addressed_score} ]")
+                try:
+                    persuasiveness_object = json.loads(
+                        wepcc_results[user_id][cluster_id]['persuasiveness_justification'])
+                    persuasiveness_score = float(persuasiveness_object['content']['persuasiveness_score'])
+                    addressed_score = (1 - modulator) * persuasiveness_score
+                    total_score += addressed_score
+                    print(
+                        f"\t[ reflect :: Addressed score for User {user_id}, Cluster {cluster_id} :: {addressed_score} ]")
+                except json.JSONDecodeError as e:
+                    print(f"\t[ reflect :: JSONDecodeError for User {user_id}, Cluster {cluster_id} :: {e} ]")
+                    print(
+                        f"\t[ reflect :: Invalid JSON :: {wepcc_results[user_id][cluster_id]['persuasiveness_justification']} ]")
 
             # Add unaddressed arguments' scores
             for cluster_id, wepcc in wepcc_results[user_id].items():
                 if cluster_id not in weight_mods:
-                    persuasiveness_score = float(
-                        wepcc['persuasiveness_justification']['content']['persuasiveness_score'])
-                    unaddressed_score = persuasiveness_score * unaddressed_score_multiplier
-                    total_score += unaddressed_score
-                    print(
-                        f"\t[ reflect :: Unaddressed score for User {user_id}, Cluster {cluster_id} :: {unaddressed_score} ]")
+                    try:
+                        persuasiveness_object = json.loads(wepcc['persuasiveness_justification'])
+                        persuasiveness_score = float(persuasiveness_object['content']['persuasiveness_score'])
+                        unaddressed_score = persuasiveness_score * unaddressed_score_multiplier
+                        total_score += unaddressed_score
+                        print(
+                            f"\t[ reflect :: Unaddressed score for User {user_id}, Cluster {cluster_id} :: {unaddressed_score} ]")
+                    except json.JSONDecodeError as e:
+                        print(f"\t[ reflect :: JSONDecodeError for User {user_id}, Cluster {cluster_id} :: {e} ]")
+                        print(f"\t[ reflect :: Invalid JSON :: {wepcc['persuasiveness_justification']} ]")
 
             aggregated_scores[user_id] = total_score
             print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
