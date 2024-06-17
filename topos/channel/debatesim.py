@@ -586,21 +586,21 @@ class DebateSimulator:
             for cluster_idA, normalized_values in cluster_data.items():
                 if normalized_values:
                     highest = max(normalized_values)
-                    average = sum(normalized_values) / len(normalized_values)
-                    delta = highest - average
-                    combined_score = highest + delta
-
-                    # Ensure the combined score does not exceed 1
-                    combined_score = min(combined_score, 1.0)
+                    shadow_coverage = highest
+                    for value in normalized_values:
+                        if value != highest:
+                            shadow_coverage += (value * (1.0 - cutoff)) * (1 - shadow_coverage)
+                            # Since we're adding coverage, shadow_coverage should naturally stay within [0,1]
+                            # No need to clamp or use min
 
                     # Initialize the nested dictionary if it doesn't exist
                     if cluster_idA not in final_scores[user_id]:
                         final_scores[user_id][cluster_idA] = 0
 
                     # Store the final score
-                    final_scores[user_id][cluster_idA] = combined_score
+                    final_scores[user_id][cluster_idA] = shadow_coverage
                     print(
-                        f"\t[ reflect :: Combined score for {user_id} (cluster {cluster_idA}) :: {combined_score} ]")
+                        f"\t[ reflect :: Combined score for {user_id} (cluster {cluster_idA}) :: {shadow_coverage} ]")
 
         # Final aggregation and ranking
         aggregated_scores = {}
