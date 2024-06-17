@@ -10,13 +10,13 @@ from datetime import datetime
 import time
 
 from transformers import AutoTokenizer, AutoModel
+from sentence_transformers import SentenceTransformer
 import torch
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from scipy.stats import entropy
 
 from fastapi import WebSocket, WebSocketDisconnect
-from topos.FC.semantic_compression import SemanticCompression
 from ..FC.argument_detection import ArgumentDetection
 from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
@@ -80,6 +80,15 @@ class DebateSimulator:
         # Load the pre-trained model and tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
         self.model = AutoModel.from_pretrained('bert-base-uncased')
+
+        self.operational_llm_model = "ollama:dolphin-llama3"
+
+        # Initialize the SentenceTransformer model for embedding text
+        self.fast_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.argument_detection = ArgumentDetection(model=self.operational_llm_model, api_key="ollama")
+
+        self.semantic_compression = SemanticCompression(model=self.operational_llm_model, api_key="ollama")
+
 
         load_dotenv()  # Load environment variables
 
@@ -177,7 +186,7 @@ class DebateSimulator:
 
         # await self.think(topic="Chess vs Checkers", prior_ontology=prior_ontology)
 
-        await self.reflect(topic=current_topic, message_history=message_history, llm_model="ollama:dolphin-llama3")
+        await self.reflect(topic=current_topic, message_history=message_history)
 
 
         # topic3:
@@ -271,8 +280,7 @@ class DebateSimulator:
             print(f"\t\t[ error in decoding :: {output_combined} ]")
 
         # Fetch semantic category from the output
-        semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key="ollama")
-        semantic_category = semantic_compression.fetch_semantic_category(output_combined)
+        semantic_category = self.semantic_compression.fetch_semantic_category(output_combined)
 
         # Send the final completed message
         await websocket.send_json(
@@ -486,10 +494,10 @@ class DebateSimulator:
             print(f"\t[ rank_arguments :: rank :: {rank} :: vertex :: {vertex} :: weight :: {weight} ]")
         return ranked_arguments
 
-    async def reflect(self, topic, message_history, llm_model):
-        print(f"\t[ reflect :: topic :: {topic} ]")
+    async def reflect(self, topic, message_history):
+        unaddressed_score_multiplier = 2.5
 
-        argument_detection = ArgumentDetection("ollama", llm_model)
+        print(f"\t[ reflect :: topic :: {topic} ]")
 
         # Step 1: Gather message history for specific users
         user_messages = {}
@@ -507,38 +515,38 @@ class DebateSimulator:
         for user_id, messages in user_messages.items():
             if len(messages) > 1:
                 print(f"\t[ reflect :: Clustering messages for user {user_id} ]")
-                clusters = argument_detection.cluster_sentences(messages, distance_threshold=1.45)
+                clusters = self.argument_detection.cluster_sentences(messages, distance_threshold=1.45)
                 clustered_messages[user_id] = clusters
                 print(f"\t[ reflect :: Clusters for user {user_id} :: {clusters} ]")
 
         print(f"\t[ reflect :: clustered_messages :: {clustered_messages} ]")
 
+        # Check if there are at least two users with at least one cluster each
+        if len(clustered_messages) < 2 or any(len(clusters) < 1 for clusters in clustered_messages.values()):
+            print("\t[ reflect :: Not enough clusters or users to perform argument matching ]")
+            return
+
         wepcc_results = {}
         cluster_weight_modulator = {}
 
-        if len(clustered_messages.keys()) > 0:
-            # Step 3: Run WEPCC on each cluster
-            for user_id, clusters in clustered_messages.items():
-                wepcc_results[user_id] = {}
-                for cluster_id, cluster_sentences in clusters.items():
-                    print(f"\t[ reflect :: Running WEPCC for user {user_id}, cluster {cluster_id} ]")
-                    warrant, evidence, persuasiveness_justification, claim, counterclaim = argument_detection.fetch_argument_definition(
-                        cluster_sentences)
-                    wepcc_results[user_id][cluster_id] = {
-                        'warrant': warrant,
-                        'evidence': evidence,
-                        'persuasiveness_justification': persuasiveness_justification,
-                        'claim': claim,
-                        'counterclaim': counterclaim
-                    }
-                    print(
-                        f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
+        # Step 3: Run WEPCC on each cluster
+        for user_id, clusters in clustered_messages.items():
+            wepcc_results[user_id] = {}
+            for cluster_id, cluster_sentences in clusters.items():
+                print(f"\t[ reflect :: Running WEPCC for user {user_id}, cluster {cluster_id} ]")
+                warrant, evidence, persuasiveness_justification, claim, counterclaim = self.argument_detection.fetch_argument_definition(
+                    cluster_sentences)
+                wepcc_results[user_id][cluster_id] = {
+                    'warrant': warrant,
+                    'evidence': evidence,
+                    'persuasiveness_justification': persuasiveness_justification,
+                    'claim': claim,
+                    'counterclaim': counterclaim
+                }
+                print(
+                    f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
 
         print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
-
-        # Initialize the SentenceTransformer model for embedding text
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer('all-MiniLM-L6-v2')
 
         # Define similarity cutoff threshold
         cutoff = 0.5
@@ -556,8 +564,8 @@ class DebateSimulator:
                         if userA != userB and userB in wepcc_results and len(wepcc_results[userB]) > 0:
                             for cluster_idB, wepccB in wepcc_results[userB].items():
                                 # Calculate cosine similarity between User A's counterclaim and User B's claim
-                                counterclaim_embedding = model.encode(wepccA['counterclaim'])
-                                claim_embedding = model.encode(wepccB['claim'])
+                                counterclaim_embedding = self.fast_embedding_model.encode(wepccA['counterclaim'])
+                                claim_embedding = self.fast_embedding_model.encode(wepccB['claim'])
                                 sim_score = cosine_similarity([counterclaim_embedding], [claim_embedding])[0][0]
                                 print(
                                     f"\t[ reflect :: Sim score between User A's counterclaim (cluster {cluster_idA}) and User B's claim (cluster {cluster_idB}) :: {sim_score} ]")
@@ -581,8 +589,8 @@ class DebateSimulator:
                         if userA != userB and userA in wepcc_results and len(wepcc_results[userA]) > 0:
                             for cluster_idA, wepccA in wepcc_results[userA].items():
                                 # Calculate cosine similarity between User B's counterclaim and User A's claim
-                                counterclaim_embedding = model.encode(wepccB['counterclaim'])
-                                claim_embedding = model.encode(wepccA['claim'])
+                                counterclaim_embedding = self.fast_embedding_model.encode(wepccB['counterclaim'])
+                                claim_embedding = self.fast_embedding_model.encode(wepccA['claim'])
                                 sim_score = cosine_similarity([counterclaim_embedding], [claim_embedding])[0][0]
                                 print(
                                     f"\t[ reflect :: Sim score between User B's counterclaim (cluster {cluster_idB}) and User A's claim (cluster {cluster_idA}) :: {sim_score} ]")
@@ -599,7 +607,25 @@ class DebateSimulator:
         # Final aggregation and ranking
         aggregated_scores = {}
         for user_id, weight_mods in cluster_weight_modulator.items():
-            total_score = sum(weight_mods.values())
+            total_score = 0
+            for cluster_id, modulator in weight_mods.items():
+                persuasiveness_score = float(
+                    wepcc_results[user_id][cluster_id]['persuasiveness_justification']['content'][
+                        'persuasiveness_score'])
+                addressed_score = (1 - modulator) * persuasiveness_score
+                total_score += addressed_score
+                print(f"\t[ reflect :: Addressed score for User {user_id}, Cluster {cluster_id} :: {addressed_score} ]")
+
+            # Add unaddressed arguments' scores
+            for cluster_id, wepcc in wepcc_results[user_id].items():
+                if cluster_id not in weight_mods:
+                    persuasiveness_score = float(
+                        wepcc['persuasiveness_justification']['content']['persuasiveness_score'])
+                    unaddressed_score = persuasiveness_score * unaddressed_score_multiplier
+                    total_score += unaddressed_score
+                    print(
+                        f"\t[ reflect :: Unaddressed score for User {user_id}, Cluster {cluster_id} :: {unaddressed_score} ]")
+
             aggregated_scores[user_id] = total_score
             print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
 

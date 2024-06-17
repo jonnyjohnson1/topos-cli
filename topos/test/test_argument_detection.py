@@ -5,7 +5,7 @@ from topos.FC.argument_detection import ArgumentDetection
 class TestArgumentSegmentation(unittest.TestCase):
 
     def setUp(self):
-        self.argument_detection = ArgumentDetection(api_key="your_api_key_here", model="ollama:dolphin-llama3")
+        self.argument_detection = ArgumentDetection(model="ollama:dolphin-llama3", api_key="your_api_key_here")
 
         # Example sentences for the debate topic
         self.debate_sentences = [
