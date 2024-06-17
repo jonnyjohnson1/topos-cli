@@ -570,17 +570,52 @@ class DebateSimulator:
                             if sim_score > cutoff:
                                 phase_sim_A.append((sim_score, cluster_idB, user_idB))
 
+                if cluster_idA not in cluster_weight_modulator[user_idA]:
+                    cluster_weight_modulator[user_idA][cluster_idA] = []
                 for sim_score, cluster_idB, user_idB in phase_sim_A:
-                    if cluster_idA not in cluster_weight_modulator[user_idA]:
-                        cluster_weight_modulator[user_idA][cluster_idA] = 0
-                    cluster_weight_modulator[user_idA][cluster_idA] += (sim_score - cutoff) / (1 - cutoff)
+                    normalized_value = (sim_score - cutoff) / (1 - cutoff)
+                    cluster_weight_modulator[user_idA][cluster_idA].append(normalized_value)
                     print(
-                        f"\t[ reflect :: Updated cluster weight modulator for {user_idA} (cluster {cluster_idA}) :: {cluster_weight_modulator[user_idA][cluster_idA]} ]")
+                        f"\t[ reflect :: Normalized value for {user_idA} (cluster {cluster_idA}) :: {normalized_value} ]")
+
+        # Create a new dictionary to hold the final combined scores
+        final_scores = {user_id: {} for user_id in cluster_weight_modulator.keys()}
+
+        # Post-process the collected normalized values for each cluster
+        for user_id, cluster_data in cluster_weight_modulator.items():
+            for cluster_idA, normalized_values in cluster_data.items():
+                if normalized_values:
+                    highest = max(normalized_values)
+                    average = sum(normalized_values) / len(normalized_values)
+                    delta = highest - average
+                    combined_score = highest + delta
+
+                    # Ensure the combined score does not exceed 1
+                    combined_score = min(combined_score, 1.0)
+
+                    # Initialize the nested dictionary if it doesn't exist
+                    if cluster_idA not in final_scores[user_id]:
+                        final_scores[user_id][cluster_idA] = 0
+
+                    # Store the final score
+                    final_scores[user_id][cluster_idA] = combined_score
+                    print(
+                        f"\t[ reflect :: Combined score for {user_id} (cluster {cluster_idA}) :: {combined_score} ]")
 
         # Final aggregation and ranking
         aggregated_scores = {}
-        for user_id, weight_mods in cluster_weight_modulator.items():
+        addressed_clusters = {}
+        unaddressed_clusters = {}
+
+        results = []
+
+        for user_id, weight_mods in final_scores.items():
             total_score = 0
+            addressed_clusters[user_id] = []
+            unaddressed_clusters[user_id] = []
+
+            user_result = {"user": user_id, "clusters": []}
+
             for cluster_id, modulator in weight_mods.items():
                 try:
                     persuasiveness_object = json.loads(
@@ -588,6 +623,12 @@ class DebateSimulator:
                     persuasiveness_score = float(persuasiveness_object['content']['persuasiveness_score'])
                     addressed_score = (1 - modulator) * persuasiveness_score
                     total_score += addressed_score
+                    addressed_clusters[user_id].append((cluster_id, addressed_score))
+                    user_result["clusters"].append({
+                        "cluster": cluster_id,
+                        "type": "addressed",
+                        "score": addressed_score
+                    })
                     print(
                         f"\t[ reflect :: Addressed score for User {user_id}, Cluster {cluster_id} :: {addressed_score} ]")
                 except json.JSONDecodeError as e:
@@ -603,6 +644,12 @@ class DebateSimulator:
                         persuasiveness_score = float(persuasiveness_object['content']['persuasiveness_score'])
                         unaddressed_score = persuasiveness_score * unaddressed_score_multiplier
                         total_score += unaddressed_score
+                        unaddressed_clusters[user_id].append((cluster_id, unaddressed_score))
+                        user_result["clusters"].append({
+                            "cluster": cluster_id,
+                            "type": "unaddressed",
+                            "score": unaddressed_score
+                        })
                         print(
                             f"\t[ reflect :: Unaddressed score for User {user_id}, Cluster {cluster_id} :: {unaddressed_score} ]")
                     except json.JSONDecodeError as e:
@@ -610,15 +657,23 @@ class DebateSimulator:
                         print(f"\t[ reflect :: Invalid JSON :: {wepcc['persuasiveness_justification']} ]")
 
             aggregated_scores[user_id] = total_score
+            user_result["total_score"] = total_score
+            results.append(user_result)
             print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
 
         print(f"\t[ reflect :: aggregated_scores :: {aggregated_scores} ]")
+        print(f"\t[ reflect :: addressed_clusters :: {addressed_clusters} ]")
+        print(f"\t[ reflect :: unaddressed_clusters :: {unaddressed_clusters} ]")
 
         app_state = AppState().get_instance()
         app_state.set_state("wepcc_results", wepcc_results)
         app_state.set_state("aggregated_scores", aggregated_scores)
+        app_state.set_state("addressed_clusters", addressed_clusters)
+        app_state.set_state("unaddressed_clusters", unaddressed_clusters)
 
         print(f"\t[ reflect :: Completed ]")
+
+        return results
 
 #alright! once again, same style, same acumen, boil over each and every one of those
 
