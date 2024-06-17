@@ -32,6 +32,7 @@ sentencepiece = "^0.2.0"
 google = "^3.0.0"
 protobuf = "^5.27.1"
 matplotlib = "^3.9.0"
+bertopic = "^0.16.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
