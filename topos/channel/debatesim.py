@@ -502,21 +502,22 @@ class DebateSimulator:
 
         print(f"\t[ reflect :: user_messages :: {user_messages} ]")
 
-        should_continue = False
-
         # Step 2: Cluster analysis for each user's messages
         clustered_messages = {}
         for user_id, messages in user_messages.items():
-            if (len(messages) > 1):
+            if len(messages) > 1:
                 print(f"\t[ reflect :: Clustering messages for user {user_id} ]")
                 clusters = argument_detection.cluster_sentences(messages, distance_threshold=1.45)
                 clustered_messages[user_id] = clusters
+                print(f"\t[ reflect :: Clusters for user {user_id} :: {clusters} ]")
 
         print(f"\t[ reflect :: clustered_messages :: {clustered_messages} ]")
 
+        wepcc_results = {}
+        cluster_weight_modulator = {}
+
         if len(clustered_messages.keys()) > 0:
             # Step 3: Run WEPCC on each cluster
-            wepcc_results = {}
             for user_id, clusters in clustered_messages.items():
                 wepcc_results[user_id] = {}
                 for cluster_id, cluster_sentences in clusters.items():
@@ -530,14 +531,83 @@ class DebateSimulator:
                         'claim': claim,
                         'counterclaim': counterclaim
                     }
+                    print(
+                        f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
 
-                print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
+        print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
 
-                # Here you would typically update the app state or further process the WEPCC results
-                app_state = AppState().get_instance()
-                app_state.set_state("wepcc_results", wepcc_results)
+        # Initialize the SentenceTransformer model for embedding text
+        from sentence_transformers import SentenceTransformer
+        model = SentenceTransformer('all-MiniLM-L6-v2')
 
-        # You can also add logic to evaluate the debate, score the arguments, and determine the winning side based on the WEPCC results.
+        # Define similarity cutoff threshold
+        cutoff = 0.5
+
+        # Initialize phase similarity and cluster weight modulator
+        cluster_weight_modulator = {user_id: {} for user_id in user_messages.keys()}
+
+        # Step 4: Match User A's Counterclaims with User B's Claims
+        for userA in user_messages.keys():
+            print(f"\t[ reflect :: Processing counterclaims for user {userA} ]")
+            if userA in wepcc_results and len(wepcc_results[userA]) > 0:
+                for cluster_idA, wepccA in wepcc_results[userA].items():
+                    phase_sim_A = []
+                    for userB in user_messages.keys():
+                        if userA != userB and userB in wepcc_results and len(wepcc_results[userB]) > 0:
+                            for cluster_idB, wepccB in wepcc_results[userB].items():
+                                # Calculate cosine similarity between User A's counterclaim and User B's claim
+                                counterclaim_embedding = model.encode(wepccA['counterclaim'])
+                                claim_embedding = model.encode(wepccB['claim'])
+                                sim_score = cosine_similarity([counterclaim_embedding], [claim_embedding])[0][0]
+                                print(
+                                    f"\t[ reflect :: Sim score between User A's counterclaim (cluster {cluster_idA}) and User B's claim (cluster {cluster_idB}) :: {sim_score} ]")
+                                if sim_score > cutoff:
+                                    phase_sim_A.append((sim_score, cluster_idB))
+
+                    for sim_score, cluster_idB in phase_sim_A:
+                        if cluster_idB not in cluster_weight_modulator[userA]:
+                            cluster_weight_modulator[userA][cluster_idB] = 0
+                        cluster_weight_modulator[userA][cluster_idB] += (sim_score - cutoff) / (1 - cutoff)
+                        print(
+                            f"\t[ reflect :: Updated cluster weight modulator for User A (cluster {cluster_idB}) :: {cluster_weight_modulator[userA][cluster_idB]} ]")
+
+        # Step 5: Match User B's Counterclaims with User A's Claims
+        for userB in user_messages.keys():
+            print(f"\t[ reflect :: Processing counterclaims for user {userB} ]")
+            if userB in wepcc_results and len(wepcc_results[userB]) > 0:
+                for cluster_idB, wepccB in wepcc_results[userB].items():
+                    phase_sim_B = []
+                    for userA in user_messages.keys():
+                        if userA != userB and userA in wepcc_results and len(wepcc_results[userA]) > 0:
+                            for cluster_idA, wepccA in wepcc_results[userA].items():
+                                # Calculate cosine similarity between User B's counterclaim and User A's claim
+                                counterclaim_embedding = model.encode(wepccB['counterclaim'])
+                                claim_embedding = model.encode(wepccA['claim'])
+                                sim_score = cosine_similarity([counterclaim_embedding], [claim_embedding])[0][0]
+                                print(
+                                    f"\t[ reflect :: Sim score between User B's counterclaim (cluster {cluster_idB}) and User A's claim (cluster {cluster_idA}) :: {sim_score} ]")
+                                if sim_score > cutoff:
+                                    phase_sim_B.append((sim_score, cluster_idA))
+
+                    for sim_score, cluster_idA in phase_sim_B:
+                        if cluster_idA not in cluster_weight_modulator[userB]:
+                            cluster_weight_modulator[userB][cluster_idA] = 0
+                        cluster_weight_modulator[userB][cluster_idA] += (sim_score - cutoff) / (1 - cutoff)
+                        print(
+                            f"\t[ reflect :: Updated cluster weight modulator for User B (cluster {cluster_idA}) :: {cluster_weight_modulator[userB][cluster_idA]} ]")
+
+        # Final aggregation and ranking
+        aggregated_scores = {}
+        for user_id, weight_mods in cluster_weight_modulator.items():
+            total_score = sum(weight_mods.values())
+            aggregated_scores[user_id] = total_score
+            print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
+
+        print(f"\t[ reflect :: aggregated_scores :: {aggregated_scores} ]")
+
+        app_state = AppState().get_instance()
+        app_state.set_state("wepcc_results", wepcc_results)
+        app_state.set_state("aggregated_scores", aggregated_scores)
 
         print(f"\t[ reflect :: Completed ]")
 
