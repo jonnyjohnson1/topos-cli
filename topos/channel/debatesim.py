@@ -494,12 +494,7 @@ class DebateSimulator:
             print(f"\t[ rank_arguments :: rank :: {rank} :: vertex :: {vertex} :: weight :: {weight} ]")
         return ranked_arguments
 
-    async def reflect(self, topic, message_history):
-        unaddressed_score_multiplier = 2.5
-
-        print(f"\t[ reflect :: topic :: {topic} ]")
-
-        # Step 1: Gather message history for specific users
+    def gather_message_history(self, message_history):
         user_messages = {}
         for message in message_history:
             user_id = message['data']['user_id']
@@ -507,29 +502,18 @@ class DebateSimulator:
             if user_id not in user_messages:
                 user_messages[user_id] = []
             user_messages[user_id].append(content)
+        return user_messages
 
-        print(f"\t[ reflect :: user_messages :: {user_messages} ]")
-
-        # Step 2: Cluster analysis for each user's messages
+    def cluster_messages(self, user_messages):
         clustered_messages = {}
         for user_id, messages in user_messages.items():
             if len(messages) > 1:
-                print(f"\t[ reflect :: Clustering messages for user {user_id} ]")
                 clusters = self.argument_detection.cluster_sentences(messages, distance_threshold=1.45)
                 clustered_messages[user_id] = clusters
-                print(f"\t[ reflect :: Clusters for user {user_id} :: {clusters} ]")
+        return clustered_messages
 
-        print(f"\t[ reflect :: clustered_messages :: {clustered_messages} ]")
-
-        # Check if there are at least two users with at least one cluster each
-        if len(clustered_messages) < 2 or any(len(clusters) < 1 for clusters in clustered_messages.values()):
-            print("\t[ reflect :: Not enough clusters or users to perform argument matching ]")
-            return
-
+    def wepcc_cluster(self, clustered_messages):
         wepcc_results = {}
-        cluster_weight_modulator = {}
-
-        # Step 3: Run WEPCC on each cluster
         for user_id, clusters in clustered_messages.items():
             wepcc_results[user_id] = {}
             for cluster_id, cluster_sentences in clusters.items():
@@ -545,17 +529,13 @@ class DebateSimulator:
                 }
                 print(
                     f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
+        return wepcc_results
 
-        print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
-
-        # Define similarity cutoff threshold
-        cutoff = 0.5
-
-        # Initialize phase similarity and cluster weight modulator
-        cluster_weight_modulator = {user_id: {} for user_id in user_messages.keys()}
-
-        # Step 4: Match each user's Counterclaims with all other users' Claims
+    def get_cluster_weight_modulator(self, wepcc_results, cutoff):
+        cluster_weight_modulator = {}
         for user_idA, clustersA in wepcc_results.items():
+            cluster_weight_modulator[user_idA] = cluster_weight_modulator.get(user_idA, {})
+
             for cluster_idA, wepccA in clustersA.items():
                 phase_sim_A = []
                 for user_idB, clustersB in wepcc_results.items():
@@ -569,7 +549,6 @@ class DebateSimulator:
                                 f"\t[ reflect :: Sim score between {user_idA}'s counterclaim (cluster {cluster_idA}) and {user_idB}'s claim (cluster {cluster_idB}) :: {sim_score} ]")
                             if sim_score > cutoff:
                                 phase_sim_A.append((sim_score, cluster_idB, user_idB))
-
                 if cluster_idA not in cluster_weight_modulator[user_idA]:
                     cluster_weight_modulator[user_idA][cluster_idA] = []
                 for sim_score, cluster_idB, user_idB in phase_sim_A:
@@ -577,39 +556,16 @@ class DebateSimulator:
                     cluster_weight_modulator[user_idA][cluster_idA].append(normalized_value)
                     print(
                         f"\t[ reflect :: Normalized value for {user_idA} (cluster {cluster_idA}) :: {normalized_value} ]")
+        return cluster_weight_modulator
 
-        # Create a new dictionary to hold the final combined scores
-        final_scores = {user_id: {} for user_id in cluster_weight_modulator.keys()}
-
-        # Post-process the collected normalized values for each cluster
-        for user_id, cluster_data in cluster_weight_modulator.items():
-            for cluster_idA, normalized_values in cluster_data.items():
-                if normalized_values:
-                    highest = max(normalized_values)
-                    shadow_coverage = highest
-                    for value in normalized_values:
-                        if value != highest:
-                            shadow_coverage += (value * (1.0 - cutoff)) * (1 - shadow_coverage)
-                            # Since we're adding coverage, shadow_coverage should naturally stay within [0,1]
-                            # No need to clamp or use min
-
-                    # Initialize the nested dictionary if it doesn't exist
-                    if cluster_idA not in final_scores[user_id]:
-                        final_scores[user_id][cluster_idA] = 0
-
-                    # Store the final score
-                    final_scores[user_id][cluster_idA] = shadow_coverage
-                    print(
-                        f"\t[ reflect :: Combined score for {user_id} (cluster {cluster_idA}) :: {shadow_coverage} ]")
-
-        # Final aggregation and ranking
+    def gather_final_results(self, cluster_shadow_coverage, wepcc_results, unaddressed_score_multiplier):
         aggregated_scores = {}
         addressed_clusters = {}
         unaddressed_clusters = {}
 
         results = []
 
-        for user_id, weight_mods in final_scores.items():
+        for user_id, weight_mods in cluster_shadow_coverage.items():
             total_score = 0
             addressed_clusters[user_id] = []
             unaddressed_clusters[user_id] = []
@@ -660,6 +616,75 @@ class DebateSimulator:
             user_result["total_score"] = total_score
             results.append(user_result)
             print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
+
+        return aggregated_scores, addressed_clusters, unaddressed_clusters, results
+
+    def get_cluster_shadow_coverage(self, cluster_weight_modulator, cutoff):
+        final_scores = {}
+
+        # Post-process the collected normalized values for each cluster
+        for user_id, cluster_data in cluster_weight_modulator.items():
+            final_scores[user_id] = final_scores.get(user_id, {})
+            for cluster_idA, normalized_values in cluster_data.items():
+                if normalized_values:
+                    highest = max(normalized_values)
+                    shadow_coverage = highest
+                    for value in normalized_values:
+                        if value != highest:
+                            shadow_coverage += (value * (1.0 - cutoff)) * (1 - shadow_coverage)
+                            # Since we're adding coverage, shadow_coverage should naturally stay within [0,1]
+                            # No need to clamp or use min
+
+                    # Initialize the nested dictionary if it doesn't exist
+                    if cluster_idA not in final_scores[user_id]:
+                        final_scores[user_id][cluster_idA] = 0
+
+                    # Store the final score
+                    final_scores[user_id][cluster_idA] = shadow_coverage
+                    print(
+                        f"\t[ reflect :: Combined score for {user_id} (cluster {cluster_idA}) :: {shadow_coverage} ]")
+
+        return final_scores
+
+    async def reflect(self, topic, message_history):
+        unaddressed_score_multiplier = 2.5
+
+        print(f"\t[ reflect :: topic :: {topic} ]")
+
+        # Step 1: Gather message history for specific users
+        user_messages = self.gather_message_history(message_history)
+        print(f"\t[ reflect :: user_messages :: {user_messages} ]")
+
+        # Step 2: Cluster analysis for each user's messages
+        clustered_messages = self.cluster_messages(user_messages)
+        print(f"\t[ reflect :: clustered_messages :: {clustered_messages} ]")
+
+        # Check if there are at least two users with at least one cluster each
+        if len(clustered_messages) < 2 or any(len(clusters) < 1 for clusters in clustered_messages.values()):
+            print("\t[ reflect :: Not enough clusters or users to perform argument matching ]")
+            return
+
+        # Step 3: Run WEPCC on each cluster
+        wepcc_results = self.wepcc_cluster(clustered_messages)
+        print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
+
+        # Define similarity cutoff threshold
+        cutoff = 0.5
+
+        # Initialize phase similarity and cluster weight modulator
+        # Step 4: Match each user's Counterclaims with all other users' Claims
+        cluster_weight_modulator = self.get_cluster_weight_modulator(wepcc_results, cutoff)
+
+        # Step 5: Calculate the counter-factual shadow coverage for each cluster
+        # Create a new dictionary to hold the final combined scores
+        cluster_shadow_coverage = self.get_cluster_shadow_coverage(cluster_weight_modulator, cutoff)
+
+        # Step 6: Final aggregation and ranking
+        # Final aggregation and ranking
+        (aggregated_scores,
+         addressed_clusters,
+         unaddressed_clusters,
+         results) = self.gather_final_results(cluster_shadow_coverage, wepcc_results, unaddressed_score_multiplier)
 
         print(f"\t[ reflect :: aggregated_scores :: {aggregated_scores} ]")
         print(f"\t[ reflect :: addressed_clusters :: {addressed_clusters} ]")
