@@ -28,7 +28,7 @@ for resource, package in nltk_packages:
 
 
 class OntologicalFeatureDetection:
-    def __init__(self, neo4j_uri, neo4j_user, neo4j_password, neo4j_database_name):
+    def __init__(self, neo4j_uri, neo4j_user, neo4j_password, neo4j_database_name, use_neo4j):
         # Initialize the tokenizer and model for SRL
         self.tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER")
         self.model = AutoModelForTokenClassification.from_pretrained("dslim/bert-base-NER")
@@ -53,8 +53,10 @@ class OntologicalFeatureDetection:
 
         self.showroom_db_name = "neo4j"
 
+        self.use_neo4j = use_neo4j
+
         # Initialize app state with Neo4j connection details
-        self.app_state = AppState(neo4j_uri, neo4j_user, neo4j_password, self.showroom_db_name)
+        self.app_state = AppState(neo4j_uri, neo4j_user, neo4j_password, self.showroom_db_name, self.use_neo4j)
 
     def perform_ner(self, text):
         doc = self.nlp(text)
@@ -451,9 +453,10 @@ class OntologicalFeatureDetection:
 
     def get_messages_by_session(self, session_id, relation_type):
         query = """
-        MATCH (s:SESSION {id: $session_id})-[r:CONTAINS]->(m:MESSAGE)
+        MATCH (s:SESSION {id: $session_id})-[r:{relation_type}]->(m:MESSAGE)
         RETURN m.id AS message_id, m.content AS message, m.timestamp AS timestamp
         """
+        query = query.replace("{relation_type}", relation_type)
         with self.app_state.get_driver_session() as neo4j_session:
             result = neo4j_session.run(query, session_id=session_id)
             data = [record.data() for record in result]
@@ -462,9 +465,10 @@ class OntologicalFeatureDetection:
 
     def get_users_by_session(self, session_id, relation_type):
         query = """
-        MATCH (s:SESSION {id: $session_id})<-[r:PARTICIPATED_IN]-(u:USER)
+        MATCH (s:SESSION {id: $session_id})<-[r:{relation_type}]-(u:USER)
         RETURN u.id AS user_id
         """
+        query = query.replace("{relation_type}", relation_type)
         with self.app_state.get_driver_session() as neo4j_session:
             result = neo4j_session.run(query, session_id=session_id)
             data = [record.data() for record in result]
@@ -473,9 +477,10 @@ class OntologicalFeatureDetection:
 
     def get_sessions_by_user(self, user_id, relation_type):
         query = """
-        MATCH (u:USER {id: $user_id})-[r:PARTICIPATED_IN]->(s:SESSION)
+        MATCH (u:USER {id: $user_id})-[r:{relation_type}]->(s:SESSION)
         RETURN s.id AS session_id
         """
+        query = query.replace("{relation_type}", relation_type)
         with self.app_state.get_driver_session() as neo4j_session:
             result = neo4j_session.run(query, user_id=user_id)
             data = [record.data() for record in result]

@@ -33,7 +33,7 @@ class TestDebateFlow(unittest.IsolatedAsyncioTestCase):
 
         # Initialize the ontological feature detection with the test database
         self.ofd = OntologicalFeatureDetection(self.neo4j_uri, self.neo4j_user, self.neo4j_password,
-                                               self.neo4j_test_database)
+                                               self.neo4j_test_database, True)
 
         # Initialize DebateSimulator
         self.debate_simulator = DebateSimulator()

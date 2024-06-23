@@ -2,8 +2,13 @@
 
 import os
 from uuid import uuid4
+import threading
+from queue import Queue
 
 from dotenv import load_dotenv
+
+import jwt
+from jwt.exceptions import InvalidTokenError
 
 import json
 from datetime import datetime
@@ -76,30 +81,93 @@ from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
 
 
 class DebateSimulator:
-    def __init__(self):
-        # Load the pre-trained model and tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        self.model = AutoModel.from_pretrained('bert-base-uncased')
+    _instance = None
+    _lock = threading.Lock()
 
-        self.operational_llm_model = "ollama:dolphin-llama3"
+    @staticmethod
+    def get_instance():
+        if DebateSimulator._instance is None:
+            with DebateSimulator._lock:
+                if DebateSimulator._instance is None:
+                    DebateSimulator._instance = DebateSimulator()
+        return DebateSimulator._instance
 
-        # Initialize the SentenceTransformer model for embedding text
-        self.fast_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        self.argument_detection = ArgumentDetection(model=self.operational_llm_model, api_key="ollama")
+    def __init__(self, use_neo4j=False):
+        if DebateSimulator._instance is not None:
+            raise Exception("This class is a singleton!")
+        else:
+            # Load the pre-trained model and tokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+            self.model = AutoModel.from_pretrained('bert-base-uncased')
 
-        self.semantic_compression = SemanticCompression(model=self.operational_llm_model, api_key="ollama")
+            self.operational_llm_model = "ollama:dolphin-llama3"
 
+            # Initialize the SentenceTransformer model for embedding text
+            self.fast_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            self.argument_detection = ArgumentDetection(model=self.operational_llm_model, api_key="ollama")
 
-        load_dotenv()  # Load environment variables
+            self.semantic_compression = SemanticCompression(model=self.operational_llm_model, api_key="ollama")
 
-        neo4j_uri = os.getenv("NEO4J_URI")
-        neo4j_user = os.getenv("NEO4J_USER")
-        neo4j_password = os.getenv("NEO4J_PASSWORD")
-        self.showroom_db_name = os.getenv("NEO4J_SHOWROOM_DATABASE")
+            self.app_state = AppState.get_instance()
 
-        # self.cache_manager = ConversationCacheManager()
-        self.ontological_feature_detection = OntologicalFeatureDetection(neo4j_uri, neo4j_user, neo4j_password,
-                                                                         self.showroom_db_name)
+            load_dotenv()  # Load environment variables
+
+            neo4j_uri = os.getenv("NEO4J_URI")
+            neo4j_user = os.getenv("NEO4J_USER")
+            neo4j_password = os.getenv("NEO4J_PASSWORD")
+            self.showroom_db_name = os.getenv("NEO4J_SHOWROOM_DATABASE")
+            self.use_neo4j = use_neo4j
+
+            # self.cache_manager = ConversationCacheManager()
+            self.ontological_feature_detection = OntologicalFeatureDetection(neo4j_uri, neo4j_user, neo4j_password,
+                                                                             self.showroom_db_name, self.use_neo4j)
+
+            # JWT secret key (should be securely stored, e.g., in environment variables)
+            self.jwt_secret = os.getenv("JWT_SECRET")
+
+            self.task_queue = Queue()
+            self.processing_thread = threading.Thread(target=self.process_tasks)
+            self.processing_thread.daemon = True
+            self.processing_thread.start()
+
+    def add_task(self, task):
+        self.task_queue.put(task)
+
+    def process_tasks(self):
+        while True:
+            task = self.task_queue.get()
+            if task['type'] == 'reset':
+                self.reset_processing_queue()
+            else:
+                self.execute_task(task)
+            self.task_queue.task_done()
+
+    def reset_processing_queue(self):
+        # Logic to reset the processing queue
+        while not self.task_queue.empty():
+            self.task_queue.get()
+            self.task_queue.task_done()
+        print("Processing queue has been reset.")
+
+    def execute_task(self, task):
+        # Process the task based on its type and data
+        if task['type'] == 'check_debate_step':
+            self.debate_step(task['user_id'], task['session_id'], task['message_id'], task['message'])
+        elif task['type'] == 'broadcast':
+            self.start_broadcast_subprocess(task['websocket'], task['message'])
+        # Add other task types as needed
+        print(f"Executed task: {task['type']}")
+
+    def websocket_broadcast(self, websocket, message):
+        while True:
+            if message:  # Condition to broadcast
+                websocket.send(message)
+            time.sleep(1)  # Adjust as necessary
+
+    # Function to start the subprocess
+    def start_broadcast_subprocess(self, websocket, message):
+        broadcast_thread = threading.Thread(target=self.websocket_broadcast, args=(websocket, message))
+        broadcast_thread.start()
 
     def get_ontology(self, user_id, session_id, message_id, message):
         composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
@@ -108,7 +176,8 @@ class DebateSimulator:
         entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ontological_feature_detection.build_ontology_from_paragraph(
             user_id, session_id, message_id, composable_string)
 
-        self.ontological_feature_detection.store_ontology(user_id, session_id, message_id, message, timestamp, context_entities, relations)
+        if self.use_neo4j:
+            self.ontological_feature_detection.store_ontology(user_id, session_id, message_id, message, timestamp, context_entities, relations)
 
         input_components = message, entities, dependencies, relations, srl_results, timestamp, context_entities
 
@@ -118,14 +187,85 @@ class DebateSimulator:
     def search_messages_by_user(self, user_id):
         return self.ontological_feature_detection.get_messages_by_user(user_id)
 
-    def search_messages_by_session(self, session_id):
-        return self.ontological_feature_detection.get_messages_by_session(session_id)
+    def search_messages_by_session(self, session_id, relation_type):
+        return self.ontological_feature_detection.get_messages_by_session(session_id, relation_type)
 
-    def search_users_by_session(self, session_id):
-        return self.ontological_feature_detection.get_users_by_session(session_id)
+    def search_users_by_session(self, session_id, relation_type):
+        return self.ontological_feature_detection.get_users_by_session(session_id, relation_type)
 
-    def search_sessions_by_user(self, user_id):
-        return self.ontological_feature_detection.get_sessions_by_user(user_id)
+    def search_sessions_by_user(self, user_id, relation_type):
+        return self.ontological_feature_detection.get_sessions_by_user(user_id, relation_type)
+
+    def has_message_id(self, message_id):
+        if self.use_neo4j:
+            return self.ontological_feature_detection.check_message_exists(message_id)
+        else:
+            return False
+
+    # @note: integrate is post, due to constant
+    async def integrate(self, token, data, app_state):
+        payload = json.loads(data)
+        message = payload["message"]
+
+        # create a new message id, with 36 characters max
+        message_id = str(uuid4())
+
+        # check for collisions
+        while self.has_message_id(message_id):
+            # re-roll a new message id, with 36 characters max
+            message_id = str(uuid4())
+
+        # Decode JWT token to extract user_id and session_id
+        try:
+            decoded_token = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
+            user_id = decoded_token.get("user_id", "")
+            session_id = decoded_token.get("session_id", "")
+        except InvalidTokenError:
+            # await websocket.send_json({"status": "error", "response": "Invalid JWT token"})
+            return
+
+        # if no user_id, bail
+        if user_id == "" or session_id == "":
+            return
+
+        current_topic = payload.get("topic", "Unknown")
+
+        # from app state
+        message_history = app_state.get_value(f"message_history_{session_id}", [])
+
+        prior_ontology = app_state.get_value(f"prior_ontology_{session_id}", [])
+
+        current_ontology = self.get_ontology(user_id, session_id, message_id, message)
+
+        print(f"[ prior_ontology: {prior_ontology} ]")
+        print(f"[ current_ontology: {current_ontology} ]")
+
+        prior_ontology.append(current_ontology)
+
+        app_state.set_state(f"prior_ontology{session_id}_", prior_ontology)
+
+        mermaid_to_ascii = self.ontological_feature_detection.mermaid_to_ascii(current_ontology)
+        print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
+
+        return current_ontology
+
+    async def check_and_reflect(self, current_topic, message_history, app_state):
+        # cluster message callback
+        # each cluster is defined by a cluster id (a hash of its messages, messages sorted alphabetically)
+
+        # 1. early out if the cluster is identical
+        # 2. total message completion is based on all messages (a generation)
+        # 3. previous generations DO NOT complete - they are halted upon a new message
+        # 4. clustering will not be affected by other Users if their message has not changed, but generations
+        #    always will because every new message from another player is dealt with re: claims/counterclaims
+        # 5. technically, each generation has a final score (though because of processing reqs, we're not expecting
+        #    to have more than each generation w/ a final score, technically this can be done as well, but
+        #    it's probably not germane to the convo needs, so let's just not)
+
+        # prioritize wepcc (warrant evidence persuasiveness/justification claim counterclaim) for the user's cluster
+
+        await self.reflect(topic=current_topic, message_history=message_history)
+
 
     async def debate_step(self, websocket: WebSocket, data, app_state):
         payload = json.loads(data)
@@ -135,18 +275,31 @@ class DebateSimulator:
         message_id = str(uuid4())
 
         # check for collisions
-        while self.ontological_feature_detection.check_message_exists(message_id):
+        while self.has_message_id(message_id):
             # re-roll a new message id, with 36 characters max
             message_id = str(uuid4())
 
         user_id = payload.get("user_id", "")
         session_id = payload.get("session_id", "")
 
+        user_id = app_state.get_value("user_id", "")
+        session_id = app_state.get_value("session_id", "")
+
+        # if no user_id, bail
+        if user_id == "":
+            await websocket.send_json({"status": "error", "response": "Invalid JSON payload"})
+            return
+
+
+        # if no session_id, bail
+
+        if session_id == "":
+            await websocket.send_json({"status": "error", "response": "Invalid JSON payload"})
+            return
+
         # default to app state if not provided
         if user_id == "":
             user_id = app_state.get_value("user_id", "")
-        if session_id == "":
-            session_id = app_state.get_value("session_id", "")
 
         message_history = payload["message_history"]
         model = payload.get("model", "solar")
