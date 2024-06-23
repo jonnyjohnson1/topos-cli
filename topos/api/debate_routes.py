@@ -5,8 +5,32 @@ from requests import Request
 import tkinter as tk
 from tkinter import filedialog
 from topos.FC.conversation_cache_manager import ConversationCacheManager
+from topos.channel.debatesim import DebateSimulator
+
 router = APIRouter()
 
+
+def integrate_and_add_task(user_id, session_id, message_id, message, websocket):
+    debate_simulator = DebateSimulator.get_instance()
+
+    # Build the ontology and get the mermaid diagram
+    mermaid_diagram = debate_simulator.build_ontology(user_id, session_id, message_id, message)
+
+    # Prepare the message for broadcasting
+    broadcast_message = {
+        'user_id': user_id,
+        'session_id': session_id,
+        'message_id': message_id,
+        'mermaid_diagram': mermaid_diagram
+    }
+
+    # Add tasks to the queue
+    debate_simulator.add_task(
+        {'type': 'ontology', 'user_id': user_id, 'session_id': session_id, 'message_id': message_id,
+         'message': message})
+    debate_simulator.add_task({'type': 'broadcast', 'websocket': websocket, 'message': json.dumps(broadcast_message)})
+
+    return mermaid_diagram
 
 @router.post("/debate/per_message_base_analytics")
 async def process_message(request: Request):
@@ -44,6 +68,8 @@ async def process_message(request: Request):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
+    pay
+
     conversation_id = payload.get("conversation_id")
     message_id = payload.get("message_id")
     message = payload.get("message")
@@ -60,6 +86,18 @@ async def process_message(request: Request):
         "message_topic_mermaid_chart": True,
         "topic_cluster_num": True,
     }
+
+    data = {"message_id": message_id, "message": message, "user_id": user_id, "session_id": session_id}
+
+    # Get the DebateSimulator singleton instance
+    debate_simulator = DebateSimulator()
+
+    # We're using the default debate_simulator app_state for now, but we can change this to a different AppState if we
+    # want to separate the debate logic from the general debate/chat logic
+    await debate_simulator.integrate(data, debate_simulator.app_state)
+
+    ## @note:@todo: so next steps are that the message_id is actually returned from debate.integrate which has kicked off an
+    # internal process to finally call debate.step like normal (with specific callbacks as intermediates)
 
     # Update default_config with provided processing_config, if any
     config = {**default_config, **processing_config}

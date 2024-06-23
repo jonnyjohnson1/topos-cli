@@ -1,6 +1,10 @@
 # topos/channel/debatesim.py
+import hashlib
+
+from typing import Dict, List
 
 import os
+import uuid
 from uuid import uuid4
 import threading
 from queue import Queue
@@ -151,8 +155,8 @@ class DebateSimulator:
 
     def execute_task(self, task):
         # Process the task based on its type and data
-        if task['type'] == 'check_debate_step':
-            self.debate_step(task['user_id'], task['session_id'], task['message_id'], task['message'])
+        if task['type'] == 'check_and_reflect':
+            self.check_and_reflect(task['session_id'], task['user_id'], task['generation_nonce'], task['message_id'], task['message'])
         elif task['type'] == 'broadcast':
             self.start_broadcast_subprocess(task['websocket'], task['message'])
         # Add other task types as needed
@@ -247,9 +251,104 @@ class DebateSimulator:
         mermaid_to_ascii = self.ontological_feature_detection.mermaid_to_ascii(current_ontology)
         print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
 
+        message_history.append(message)
+
+        app_state.set_value(f"message_history_{session_id}", message_history)
+
+        # Create new Generation
+        generation_nonce = self.generate_nonce()
+
+        self.add_task({
+            'type': 'check_and_reflect',
+            'session_id': session_id,
+            'user_id': user_id,
+            'generation_nonce': generation_nonce,
+            'message_id': message_id,
+            'message': message}
+        )
+
         return current_ontology
 
-    async def check_and_reflect(self, current_topic, message_history, app_state):
+    @staticmethod
+    def generate_nonce():
+        return str(uuid.uuid4())
+
+    @staticmethod
+    def aggregate_user_messages(message_history: List[Dict]) -> Dict[str, List[str]]:
+        user_messages = {}
+        for message in message_history:
+            user_id = message['data']['user_id']
+            content = message['data']['content']
+            if user_id not in user_messages:
+                user_messages[user_id] = []
+            user_messages[user_id].append(content)
+        return user_messages
+
+    @staticmethod
+    def generate_hash(cluster: List[str]) -> str:
+        sorted_cluster = sorted(cluster)
+        return hashlib.sha256(json.dumps(sorted_cluster).encode()).hexdigest()
+
+    def generate_and_check_hashes(self, clusters):
+        cluster_hashes = {}
+        for cluster in clusters:
+            cluster_id = cluster["cluster_id"]
+            cluster_hash = self.generate_hash(cluster["messages"])
+            cluster_hashes[cluster_id] = cluster_hash
+        return cluster_hashes
+
+    def incremental_clustering(self, clusters, cluster_hashes):
+        updated_clusters = {}
+        for cluster_id, cluster in clusters.items():
+            if cluster_hashes[cluster_id] != self.generate_hash(cluster):
+                updated_clusters[cluster_id] = cluster
+        return updated_clusters
+
+    async def broadcast_to_websocket_group(self, websocket_group, json_message):
+        for websocket in websocket_group:
+            await websocket.send_json(json_message)
+
+    async def check_and_reflect(self, session_id, user_id, generation_nonce, generation_message_id):
+        app_state = AppState().get_instance()
+
+        message_history = app_state.get_value(f"message_history_{session_id}", [])
+
+        # Step 1: Gather message history for specific users
+        user_messages = self.aggregate_user_messages(message_history)
+        print(f"\t[ reflect :: user_messages :: {user_messages} ]")
+
+        # Step 2: Cluster analysis for each user's messages
+        # Generate and check hashes for clusters
+        clusters = self.cluster_messages(user_messages)
+        print(f"\t[ reflect :: clustered_messages :: {clusters} ]")
+
+        # @note:@here:@todo:@next: this should be linear, step 3 replace match and then keep pumping out websocket
+        #  messages
+
+        # Because clusters are based on sentences, groups of sentences will hash to the exact same value & will thus
+        # have identical WEPCC parameters.
+        cluster_hashes = self.generate_and_check_hashes(clusters)
+
+        websocket_group = app_state.get_value(f"websocket_group_{session_id}", [])
+
+        # Send initial cluster data back to frontend
+        await self.broadcast_to_websocket_group(websocket_group, {
+            "status": "initial_clusters",
+            "clusters": clusters,
+            "hashes": cluster_hashes,
+            "generation": generation_nonce
+        })
+
+        # Perform incremental clustering if needed
+        updated_clusters = self.incremental_clustering(clusters, cluster_hashes)
+        # Send updated cluster data back to frontend
+        await self.broadcast_to_websocket_group(websocket_group, {
+            "status": "updated_clusters",
+            "clusters": updated_clusters,
+            "hashes": cluster_hashes,
+            "generation": generation_nonce
+        })
+
         # cluster message callback
         # each cluster is defined by a cluster id (a hash of its messages, messages sorted alphabetically)
 
@@ -647,16 +746,6 @@ class DebateSimulator:
             print(f"\t[ rank_arguments :: rank :: {rank} :: vertex :: {vertex} :: weight :: {weight} ]")
         return ranked_arguments
 
-    def gather_message_history(self, message_history):
-        user_messages = {}
-        for message in message_history:
-            user_id = message['data']['user_id']
-            content = message['data']['content']
-            if user_id not in user_messages:
-                user_messages[user_id] = []
-            user_messages[user_id].append(content)
-        return user_messages
-
     def cluster_messages(self, user_messages):
         clustered_messages = {}
         for user_id, messages in user_messages.items():
@@ -803,14 +892,6 @@ class DebateSimulator:
         unaddressed_score_multiplier = 2.5
 
         print(f"\t[ reflect :: topic :: {topic} ]")
-
-        # Step 1: Gather message history for specific users
-        user_messages = self.gather_message_history(message_history)
-        print(f"\t[ reflect :: user_messages :: {user_messages} ]")
-
-        # Step 2: Cluster analysis for each user's messages
-        clustered_messages = self.cluster_messages(user_messages)
-        print(f"\t[ reflect :: clustered_messages :: {clustered_messages} ]")
 
         # Check if there are at least two users with at least one cluster each
         if len(clustered_messages) < 2 or any(len(clusters) < 1 for clusters in clustered_messages.values()):

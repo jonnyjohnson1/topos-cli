@@ -10,12 +10,12 @@ class AppState:
     _instance = None
     _lock = Lock()
 
-    def __new__(cls, neo4j_uri=None, neo4j_user=None, neo4j_password=None, neo4j_db_name=None):
+    def __new__(cls, neo4j_uri=None, neo4j_user=None, neo4j_password=None, neo4j_db_name=None, use_neo4j=True):
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super(AppState, cls).__new__(cls)
-                    cls._instance._init_state(neo4j_uri, neo4j_user, neo4j_password, neo4j_db_name)
+                    cls._instance._init_state(neo4j_uri, neo4j_user, neo4j_password, neo4j_db_name, use_neo4j)
                     print("\t[ app_state :: new instance created ]")
         else:
             print("\t[ app_state :: returning singleton instance ]")
@@ -27,15 +27,16 @@ class AppState:
             raise Exception("AppState has not been initialized, call AppState with parameters first.")
         return cls._instance
 
-    def _init_state(self, neo4j_uri, neo4j_user, neo4j_password, neo4j_db_name):
+    def _init_state(self, neo4j_uri, neo4j_user, neo4j_password, neo4j_db_name, use_neo4j=True):
         print("\t\t[ app_state :: init ]")
         self.state = {}
         self.neo4j_db_name = neo4j_db_name
 
-        # Initialize Neo4j connection using singleton
-        self.neo4j_conn = Neo4jConnection(neo4j_uri, neo4j_user, neo4j_password)
-        self.driver = self.neo4j_conn.get_driver()
-        self.closed = False
+        if use_neo4j:
+            # Initialize Neo4j connection using singleton
+            self.neo4j_conn = Neo4jConnection(neo4j_uri, neo4j_user, neo4j_password)
+            self.driver = self.neo4j_conn.get_driver()
+            self.closed = False
 
     def get_driver(self):
         return self.driver
