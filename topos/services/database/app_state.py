@@ -50,6 +50,9 @@ class AppState:
     def set_state(self, key, value):
         self.state[key] = value
 
+    def set_value(self, key, value):
+        self.state[key] = value
+
     def get_value(self, key, default=None):
         return self.state.get(key, default)
 

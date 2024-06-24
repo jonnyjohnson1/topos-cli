@@ -4,19 +4,19 @@ import hashlib
 from typing import Dict, List
 
 import os
+import uuid
+from uuid import uuid4
 import threading
 from queue import Queue
 
-from datetime import datetime, timedelta
-import time
-
 from dotenv import load_dotenv
 
-from uuid import uuid4
-
-import json
 import jwt
 from jwt.exceptions import InvalidTokenError
+
+import json
+from datetime import datetime
+import time
 
 from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
@@ -108,7 +108,7 @@ class Cluster:
         }
 
 
-class DebateSimulator:
+class DebateSimulatorThink:
     _instance = None
     _lock = threading.Lock()
 
@@ -153,21 +153,10 @@ class DebateSimulator:
             # JWT secret key (should be securely stored, e.g., in environment variables)
             self.jwt_secret = os.getenv("JWT_SECRET")
 
-            self.current_generation = None
-
             self.task_queue = Queue()
             self.processing_thread = threading.Thread(target=self.process_tasks)
             self.processing_thread.daemon = True
             self.processing_thread.start()
-
-    def generate_jwt_token(self, user_id, session_id):
-        payload = {
-            "user_id": user_id,
-            "session_id": session_id,
-            "exp": datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
-        }
-        token = jwt.encode(payload, self.jwt_secret, algorithm="HS256")
-        return token
 
     def add_task(self, task):
         self.task_queue.put(task)
@@ -186,22 +175,18 @@ class DebateSimulator:
         while not self.task_queue.empty():
             self.task_queue.get()
             self.task_queue.task_done()
-
-        self.current_generation = None
         print("Processing queue has been reset.")
 
     def execute_task(self, task):
         # Process the task based on its type and data
         if task['type'] == 'check_and_reflect':
-            self.current_generation = task['generation_nonce']
             self.check_and_reflect(task['session_id'], task['user_id'], task['generation_nonce'], task['message_id'], task['message'])
         elif task['type'] == 'broadcast':
             self.start_broadcast_subprocess(task['websocket'], task['message'])
         # Add other task types as needed
         print(f"Executed task: {task['type']}")
 
-    @staticmethod
-    def websocket_broadcast(websocket, message):
+    def websocket_broadcast(self, websocket, message):
         while True:
             if message:  # Condition to broadcast
                 websocket.send(message)
@@ -211,9 +196,6 @@ class DebateSimulator:
     def start_broadcast_subprocess(self, websocket, message):
         broadcast_thread = threading.Thread(target=self.websocket_broadcast, args=(websocket, message))
         broadcast_thread.start()
-
-    def stop_all_reflect_tasks(self):
-        self.add_task({'type': 'reset'})
 
     def get_ontology(self, user_id, session_id, message_id, message):
         composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
@@ -230,12 +212,23 @@ class DebateSimulator:
         mermaid_syntax = self.ontological_feature_detection.extract_mermaid_syntax(input_components, input_type="components")
         return mermaid_syntax
 
+    def search_messages_by_user(self, user_id):
+        return self.ontological_feature_detection.get_messages_by_user(user_id)
+
+    def search_messages_by_session(self, session_id, relation_type):
+        return self.ontological_feature_detection.get_messages_by_session(session_id, relation_type)
+
+    def search_users_by_session(self, session_id, relation_type):
+        return self.ontological_feature_detection.get_users_by_session(session_id, relation_type)
+
+    def search_sessions_by_user(self, user_id, relation_type):
+        return self.ontological_feature_detection.get_sessions_by_user(user_id, relation_type)
+
     def has_message_id(self, message_id):
         if self.use_neo4j:
             return self.ontological_feature_detection.check_message_exists(message_id)
         else:
             return False
-
 
     # @note: integrate is post, due to constant
     async def integrate(self, token, data, app_state):
@@ -289,8 +282,6 @@ class DebateSimulator:
         # Create new Generation
         generation_nonce = self.generate_nonce()
 
-        self.stop_all_reflect_tasks()
-
         self.add_task({
             'type': 'check_and_reflect',
             'session_id': session_id,
@@ -304,7 +295,7 @@ class DebateSimulator:
 
     @staticmethod
     def generate_nonce():
-        return str(uuid4())
+        return str(uuid.uuid4())
 
     @staticmethod
     def aggregate_user_messages(message_history: List[Dict]) -> Dict[str, List[str]]:
@@ -331,16 +322,9 @@ class DebateSimulator:
 
         return updated_clusters
 
-    @staticmethod
-    async def broadcast_to_websocket_group(websocket_group, json_message):
+    async def broadcast_to_websocket_group(self, websocket_group, json_message):
         for websocket in websocket_group:
             await websocket.send_json(json_message)
-
-    def check_generation_halting(self, generation_nonce):
-        if self.current_generation is not None and self.current_generation != generation_nonce:
-            return True
-
-        return False
 
     async def check_and_reflect(self, session_id, user_id, generation_nonce, message_id, message):
         # "Reflect"
@@ -370,6 +354,11 @@ class DebateSimulator:
         clusters = self.cluster_messages(user_messages, generation_nonce, session_id)
         print(f"\t[ reflect :: clustered_messages :: {clusters} ]")
 
+        # Check if there are at least two users with at least one cluster each
+        if len(clusters) < 2 or any(len(user_clusters) < 1 for user_clusters in clusters.values()):
+            print("\t[ reflect :: Not enough clusters or users to perform argument matching ]")
+            return
+
         websocket_group = app_state.get_value(f"websocket_group_{session_id}", [])
 
         # Send initial cluster data back to frontend
@@ -379,8 +368,6 @@ class DebateSimulator:
                          in clusters.items()},
             "generation": generation_nonce
         })
-        if self.check_generation_halting(generation_nonce) is True:
-            return
 
         # Perform incremental clustering if needed
         previous_clusters = app_state.get_value(f"previous_clusters_{session_id}", {})
@@ -394,8 +381,6 @@ class DebateSimulator:
                          in updated_clusters.items()},
             "generation": generation_nonce
         })
-        if self.check_generation_halting(generation_nonce) is True:
-            return
 
         async def report_wepcc_result(generation_nonce, user_id, cluster_id, cluster_hash, wepcc_result):
             await self.broadcast_to_websocket_group(websocket_group, {
@@ -406,8 +391,6 @@ class DebateSimulator:
                 "cluster_hash": cluster_hash,
                 "wepcc_result": wepcc_result,
             })
-            if self.check_generation_halting(generation_nonce) is True:
-                return
 
         # Step 3: Run WEPCC on each cluster
         # these each take a bit to process, so we're passing in the websocket group to stream the results back out
@@ -454,6 +437,387 @@ class DebateSimulator:
         print(f"\t[ reflect :: Completed ]")
 
         return results
+
+
+    async def debate_step(self, websocket: WebSocket, data, app_state):
+        payload = json.loads(data)
+        message = payload["message"]
+
+        # create a new message id, with 36 characters max
+        message_id = str(uuid4())
+
+        # check for collisions
+        while self.has_message_id(message_id):
+            # re-roll a new message id, with 36 characters max
+            message_id = str(uuid4())
+
+        user_id = payload.get("user_id", "")
+        session_id = payload.get("session_id", "")
+
+        user_id = app_state.get_value("user_id", "")
+        session_id = app_state.get_value("session_id", "")
+
+        # if no user_id, bail
+        if user_id == "":
+            await websocket.send_json({"status": "error", "response": "Invalid JSON payload"})
+            return
+
+
+        # if no session_id, bail
+
+        if session_id == "":
+            await websocket.send_json({"status": "error", "response": "Invalid JSON payload"})
+            return
+
+        # default to app state if not provided
+        if user_id == "":
+            user_id = app_state.get_value("user_id", "")
+
+        message_history = payload["message_history"]
+        model = payload.get("model", "solar")
+        temperature = float(payload.get("temperature", 0.04))
+        current_topic = payload.get("topic", "Unknown")
+
+        prior_ontology = app_state.get_value("prior_ontology", [])
+
+        # if prior_ontology is []:
+        #     prior_ontology = []
+
+        current_ontology = self.get_ontology(user_id, session_id, message_id, message)
+
+        mermaid_to_ascii = self.ontological_feature_detection.mermaid_to_ascii(current_ontology)
+
+        print(f"[ prior_ontology: {prior_ontology} ]")
+
+        print(f"[ current_ontology: {current_ontology} ]")
+
+        print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
+
+        prior_ontology.append(current_ontology)
+
+        app_state.set_state("prior_ontology", prior_ontology)
+
+        # algo approach(es):
+
+        # ontological feature detection
+
+        # break previous messages into ontology
+        # cache ontology
+        # ** use diffuser to spot differentials
+        # *** map causal ontology back to spot reference point
+        # break current message into ontology
+        # ** BLEU score a 10x return on the ontology
+        # read ontology + newest
+
+        # await self.think(topic="Chess vs Checkers", prior_ontology=prior_ontology)
+
+        await self.reflect(topic=current_topic, message_history=message_history)
+
+
+        # topic3:
+        # a hat is worn by a person, who has an edge in a meeting due to wearing the hat
+
+        # topic2:
+        # I think larger nuclear reactors are better than smaller ones
+
+        # topic:
+        # checkers is better than chess
+        #
+        # user1:
+        # [user1] chess is better than checkers
+        #
+        # user2:
+        # [user2] no, checkers is better than chess - it's faster
+        #
+        # user1:
+        # [user1]  I don't believe so - checkers always takes at least a large fixed time to perform moves, and chess can mate in less than 10 if you're good
+        #
+        # user2:
+        # [user2]  but checkers is more accessible to a wider audience, and it's easier to learn
+        #
+        # user1:
+        # [user1]  that's true, but chess has a richer history and more complex strategies
+        #
+        # user2:
+        # [user2]  but checkers is more fun to play, and it's more engaging
+
+        # Set system prompt
+        has_topic = False
+        system_prompt = f""
+
+        user_definition_prompt = f"""-----
+                                    Users are defined by the following roles: user1, user2, user3, etc. The moderator is defined by the role: moderator.\n
+                                    Roles are indicated by the format:
+                                    [user1]: "I have an opinion on XYZ"
+                                    [user2]: "I have another opinion on ABC"
+                                    [moderator]: "I think the topic might be XYZ" 
+                                    ------
+                                    """
+
+
+        if current_topic == "unknown topic":
+            system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style, in the format of:\n
+                            {{\"role\":\"moderator\", \"content\":\"I think the topic might be...(_insert name of what you think the topic might be based on the ongoing discussion here!_)\", \"certainty_score\": \"(_insert certainty score 1-10 here!_)\"}}"""
+        else:
+            has_topic = True
+            system_prompt = f"""You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n
+                            You keep track of who is speaking, in the context of saying out loud every round:\n
+                            {{\"role\": \"moderator\", \"content\": \"The topic is...(_insert name of topic here!_)\", \"synopsis\": \"(_insert synopsis of the content so far, with debaters points in abstract_)\", \"affirmative_negative score\": \"(_insert debate affirmative (is affirming the premise of the current \'topic\') score, 1 to 10, here!_) / (_insert debate negative (is not affirming the premise of the current "topic", and is correlated to the inverse of the statement) score, 1 to 10, here!_)\"}}"""
+
+        system_prompt = f"{user_definition_prompt}\n{system_prompt}"
+
+        user_prompt = f"{message}"
+
+        # print(f"\t[ system prompt :: {system_prompt} ]")
+        print(f"\t[ user prompt :: {user_prompt} ]")
+        simp_msg_history = [{'role': 'system', 'content': system_prompt}]
+
+        # Simplify message history to required format
+        for index, message in enumerate(message_history):
+            message_role = message['role']
+            if message_role == "user":
+                message_user_id = f"{message['data']['user_id']}:"
+                message_content = message['data']['content']
+            else:
+                message_user_id = ""
+                message_content = message['content']
+
+            simplified_message = {'role': message['role'], 'content': f"{message_user_id}{message_content}"}
+            if 'images' in message:
+                simplified_message['images'] = message['images']
+
+            simp_msg_history.append(simplified_message)
+
+        simp_msg_history.append({'role': 'user', 'content': f"{user_id}:{user_prompt}"})
+
+        # Processing the chat
+        output_combined = ""
+        for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
+            output_combined += chunk
+            await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
+
+        output_json = []
+        try:
+            result = json.loads(f"{output_combined}")
+            output_json = result
+        except json.JSONDecodeError:
+            output_json = output_combined
+            print(f"\t\t[ error in decoding :: {output_combined} ]")
+
+        # Fetch semantic category from the output
+        semantic_category = self.semantic_compression.fetch_semantic_category(output_combined)
+
+        # Send the final completed message
+        await websocket.send_json(
+            {"status": "completed", "response": output_combined, "semantic_category": semantic_category.content,
+             "completed": True})
+
+    def embed_text(self, text):
+        # Tokenize the input text
+        inputs = self.tokenizer(text, return_tensors='pt')
+
+        # Get the hidden states from the model
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        # Use the [CLS] token representation as the embedding
+        cls_embedding = outputs.last_hidden_state[:, 0, :].numpy().squeeze()
+        return cls_embedding
+
+    def compute_semantic_distances(self, ontology, topic_embedding):
+        # Embed the ontology text
+        ontology_embedding = self.embed_text(ontology)
+
+        # Compute cosine similarity between ontology and topic
+        similarity = cosine_similarity([ontology_embedding], [topic_embedding])[0][0]
+
+        return 1 - similarity  # Return distance instead of similarity
+
+    def normalize_distances(self, distances):
+        total = np.sum(distances)
+        if total == 0:
+            return np.zeros_like(distances)
+        return distances / total
+
+    def aggregate_distributions(self, semantic_distances):
+        # Convert to numpy array for easier manipulation
+        distances = np.array(semantic_distances)
+
+        # Compute the mean across all distances to form the collective distribution
+        if len(distances) == 0:
+            return np.array([0.5])  # Handle empty distributions
+        collective_distribution = np.mean(distances, axis=0)
+
+        return collective_distribution
+
+    def calculate_kl_divergence(self, p, q):
+        # Ensure the distributions are numpy arrays
+        p = np.asarray(p, dtype=float)
+        q = np.asarray(q, dtype=float)
+
+        # Normalize the distributions
+        p = p / np.sum(p)
+        q = q / np.sum(q)
+
+        # Calculate the KL-Divergence
+        kl_div = entropy(p, q)
+
+        return kl_div
+
+    def calculate_impact_scores(self, kl_divergences, collective_distribution):
+        # Calculate the impact score for each contribution
+        impact_scores = []
+        for kl_divergence in kl_divergences:
+            impact_score = kl_divergence - collective_distribution
+            impact_scores.append(impact_score)
+
+        return impact_scores
+
+    async def think(self, topic, prior_ontology):
+        print(f"\t[ think :: topic :: {topic} ]")
+        print(f"\t[ think :: prior_ontology :: {prior_ontology} ]")
+
+        # Embed the topic
+        topic_embedding = self.embed_text(topic)
+
+        # Compute semantic distances for each contribution
+        semantic_distances = []
+        for ontology in prior_ontology:
+            distance = self.compute_semantic_distances(ontology, topic_embedding)
+            print(f"\t\t[ think :: distance :: {distance} ]")
+            semantic_distances.append(distance)
+
+        # Normalize distances
+        normalized_distances = self.normalize_distances(semantic_distances)
+        print(f"\t[ think :: normalized_distances :: {normalized_distances} ]")
+
+        # Aggregate the distributions to form a collective distribution
+        collective_distribution = self.aggregate_distributions(normalized_distances)
+        print(f"\t[ think :: collective_distribution :: {collective_distribution} ]")
+
+        # Calculate KL-Divergence for each contribution
+        kl_divergences = []
+        for distance in normalized_distances:
+            kl_divergence = self.calculate_kl_divergence([distance, 1 - distance],
+                                                         [collective_distribution, 1 - collective_distribution])
+            print(f"\t\t[ think :: kl_divergence :: {kl_divergence} ]")
+            kl_divergences.append(kl_divergence)
+
+        # Calculate impact scores
+        impact_scores = self.calculate_impact_scores(kl_divergences, collective_distribution)
+        print(f"\t[ think :: impact_scores :: {impact_scores} ]")
+
+        # Store results in app_state (subkey session_id)
+        app_state = AppState().get_instance()
+        app_state.set_state("kl_divergences", kl_divergences)
+
+        print(f"\t[ think :: kl_divergences :: {kl_divergences} ]")
+
+        parsed_ontology = [self.parse_mermaid_to_dict(component) for component in prior_ontology]
+        print(f"\t[ think :: parsed_ontology :: {parsed_ontology} ]")
+
+        # Build a graph from parsed ontology
+        graph = self.build_graph(parsed_ontology)
+        print(f"\t[ think :: graph :: {graph} ]")
+
+        # Calculate weights for each vertex based on the number of edges
+        vertex_weights = self.calculate_vertex_weights(graph)
+        print(f"\t[ think :: vertex_weights :: {vertex_weights} ]")
+
+        # Identify and weigh densely connected sub-graphs
+        sub_graph_weights = self.calculate_sub_graph_weights(graph)
+        print(f"\t[ think :: sub_graph_weights :: {sub_graph_weights} ]")
+
+        # Combine weights to determine the strength of each argument
+        argument_weights = self.combine_weights(vertex_weights, sub_graph_weights)
+        print(f"\t[ think :: argument_weights :: {argument_weights} ]")
+
+        # Rank arguments based on their weights
+        ranked_arguments = self.rank_arguments(argument_weights)
+        print(f"\t[ think :: ranked_arguments :: {ranked_arguments} ]")
+
+        return ranked_arguments
+
+    def parse_mermaid_to_dict(self, mermaid_str):
+        """Parse mermaid flowchart syntax into a dictionary with 'relations'."""
+        lines = mermaid_str.strip().split("\n")
+        relations = []
+        for line in lines:
+            if "-->" in line:
+                parts = line.split("-->")
+                subject = parts[0].strip().split('[')[0]
+                relation_type = "less complicated" if "|\"less complicated\"|" in parts[1] else "relation"
+                obj = parts[1].strip().split('[')[0].split('|')[0].strip()
+                relations.append((subject, relation_type, obj))
+        return {"relations": relations}
+
+    def build_graph(self, ontology):
+        print(f"\t[ build_graph :: start ]")
+        graph = {}
+        for index, component in enumerate(ontology):
+            print(f"\t[ build_graph :: component[{index}] :: {component} ]")
+            if isinstance(component, dict) and 'relations' in component:
+                for relation in component['relations']:
+                    subject, relation_type, obj = relation
+                    print(f"\t[ build_graph :: relation :: {subject} --{relation_type}--> {obj} ]")
+                    if subject not in graph:
+                        graph[subject] = []
+                    if obj not in graph:
+                        graph[obj] = []
+                    graph[subject].append(obj)
+                    graph[obj].append(subject)
+            else:
+                print(f"\t[ build_graph :: error :: component[{index}] is not a dict or missing 'relations' key ]")
+        print(f"\t[ build_graph :: graph :: {graph} ]")
+        return graph
+
+    def calculate_vertex_weights(self, graph):
+        print(f"\t[ calculate_vertex_weights :: start ]")
+        vertex_weights = {vertex: len(edges) for vertex, edges in graph.items()}
+        for vertex, weight in vertex_weights.items():
+            print(f"\t[ calculate_vertex_weights :: vertex :: {vertex} :: weight :: {weight} ]")
+        return vertex_weights
+
+    def calculate_sub_graph_weights(self, graph):
+        print(f"\t[ calculate_sub_graph_weights :: start ]")
+        sub_graph_weights = {}
+        visited = set()
+        for vertex in graph:
+            if vertex not in visited:
+                sub_graph = self.dfs(graph, vertex, visited)
+                sub_graph_weight = sum(self.calculate_vertex_weights(sub_graph).values())
+                sub_graph_weights[vertex] = sub_graph_weight
+                print(f"\t[ calculate_sub_graph_weights :: vertex :: {vertex} :: sub_graph_weight :: {sub_graph_weight} ]")
+        return sub_graph_weights
+
+    def dfs(self, graph, start, visited):
+        print(f"\t[ dfs :: start :: {start} ]")
+        stack = [start]
+        sub_graph = {}
+        while stack:
+            vertex = stack.pop()
+            if vertex not in visited:
+                visited.add(vertex)
+                sub_graph[vertex] = graph[vertex]
+                stack.extend([v for v in graph[vertex] if v not in visited])
+                print(f"\t[ dfs :: vertex :: {vertex} :: visited :: {visited} ]")
+        print(f"\t[ dfs :: sub_graph :: {sub_graph} ]")
+        return sub_graph
+
+    def combine_weights(self, vertex_weights, sub_graph_weights):
+        print(f"\t[ combine_weights :: start ]")
+        combined_weights = {}
+        for vertex in vertex_weights:
+            combined_weights[vertex] = vertex_weights[vertex] + sub_graph_weights.get(vertex, 0)
+            print(f"\t[ combine_weights :: vertex :: {vertex} :: combined_weight :: {combined_weights[vertex]} ]")
+        return combined_weights
+
+    def rank_arguments(self, argument_weights):
+        print(f"\t[ rank_arguments :: start ]")
+        ranked_arguments = sorted(argument_weights.items(), key=lambda item: item[1], reverse=True)
+        for rank, (vertex, weight) in enumerate(ranked_arguments, 1):
+            print(f"\t[ rank_arguments :: rank :: {rank} :: vertex :: {vertex} :: weight :: {weight} ]")
+        return ranked_arguments
 
     def cluster_messages(self, user_messages, generation, session_id):
         clustered_messages = {}
@@ -603,3 +967,55 @@ class DebateSimulator:
                         f"\t[ reflect :: Combined score for {user_id} (cluster {cluster_idA}) :: {shadow_coverage} ]")
 
         return final_scores
+
+    async def reflect(self, topic, message_history):
+        unaddressed_score_multiplier = 2.5
+
+        print(f"\t[ reflect :: topic :: {topic} ]")
+
+        # Check if there are at least two users with at least one cluster each
+        if len(clustered_messages) < 2 or any(len(clusters) < 1 for clusters in clustered_messages.values()):
+            print("\t[ reflect :: Not enough clusters or users to perform argument matching ]")
+            return
+
+        # Step 3: Run WEPCC on each cluster
+        wepcc_results = self.wepcc_cluster(clustered_messages)
+        print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
+
+        # Define similarity cutoff threshold
+        cutoff = 0.5
+
+        # Initialize phase similarity and cluster weight modulator
+        # Step 4: Match each user's Counterclaims with all other users' Claims
+        cluster_weight_modulator = self.get_cluster_weight_modulator(wepcc_results, cutoff)
+
+        # Step 5: Calculate the counter-factual shadow coverage for each cluster
+        # Create a new dictionary to hold the final combined scores
+        cluster_shadow_coverage = self.get_cluster_shadow_coverage(cluster_weight_modulator, cutoff)
+
+        # Step 6: Final aggregation and ranking
+        # Final aggregation and ranking
+        (aggregated_scores,
+         addressed_clusters,
+         unaddressed_clusters,
+         results) = self.gather_final_results(cluster_shadow_coverage, wepcc_results, unaddressed_score_multiplier)
+
+        print(f"\t[ reflect :: aggregated_scores :: {aggregated_scores} ]")
+        print(f"\t[ reflect :: addressed_clusters :: {addressed_clusters} ]")
+        print(f"\t[ reflect :: unaddressed_clusters :: {unaddressed_clusters} ]")
+
+        app_state = AppState().get_instance()
+        app_state.set_state("wepcc_results", wepcc_results)
+        app_state.set_state("aggregated_scores", aggregated_scores)
+        app_state.set_state("addressed_clusters", addressed_clusters)
+        app_state.set_state("unaddressed_clusters", unaddressed_clusters)
+
+        print(f"\t[ reflect :: Completed ]")
+
+        return results
+
+#alright! once again, same style, same acumen, boil over each and every one of those
+
+#okay compose it all in a series of functions so I can copy paste.
+
+#AFTERWARDS I'd like a list of all of the new functions you need to yet provide super-stubs for
