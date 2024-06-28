@@ -7,7 +7,7 @@ import os
 import threading
 from queue import Queue
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import time
 
 from dotenv import load_dotenv
@@ -154,6 +154,7 @@ class DebateSimulator:
             self.jwt_secret = os.getenv("JWT_SECRET")
 
             self.current_generation = None
+            self.websocket_groups = {}
 
             self.task_queue = Queue()
             self.processing_thread = threading.Thread(target=self.process_tasks)
@@ -164,29 +165,51 @@ class DebateSimulator:
         payload = {
             "user_id": user_id,
             "session_id": session_id,
-            "exp": datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
+            "exp": datetime.now(UTC) + timedelta(hours=1)  # Token valid for 1 hour
         }
         token = jwt.encode(payload, self.jwt_secret, algorithm="HS256")
         return token
 
+    def add_to_websocket_group(self, session_id, websocket):
+        with self._lock:
+            if session_id not in self.websocket_groups:
+                self.websocket_groups[session_id] = []
+            self.websocket_groups[session_id].append(websocket)
+
+    def remove_from_websocket_group(self, session_id, websocket):
+        with self._lock:
+            if session_id in self.websocket_groups:
+                self.websocket_groups[session_id].remove(websocket)
+                if not self.websocket_groups[session_id]:
+                    del self.websocket_groups[session_id]
+
     def add_task(self, task):
         self.task_queue.put(task)
+
+    def reset_processing_queue(self):
+        # Logic to reset the processing queue
+        with self.task_queue.mutex:
+            self.task_queue.queue.clear()
+        self.current_generation = None
+        print("Processing queue has been reset.")
 
     def process_tasks(self):
         while True:
             task = self.task_queue.get()
-            if task['type'] == 'reset':
-                self.reset_processing_queue()
-            else:
-                self.execute_task(task)
-            self.task_queue.task_done()
+            try:
+                if task['type'] == 'reset':
+                    self.reset_processing_queue()
+                else:
+                    self.execute_task(task)
+            except Exception as e:
+                print(f"Error processing task: {e}")
+            finally:
+                self.task_queue.task_done()
 
     def reset_processing_queue(self):
         # Logic to reset the processing queue
-        while not self.task_queue.empty():
-            self.task_queue.get()
-            self.task_queue.task_done()
-
+        with self.task_queue.mutex:
+            self.task_queue.queue.clear()
         self.current_generation = None
         print("Processing queue has been reset.")
 
@@ -214,6 +237,7 @@ class DebateSimulator:
 
     def stop_all_reflect_tasks(self):
         self.add_task({'type': 'reset'})
+        self.process_tasks()
 
     def get_ontology(self, user_id, session_id, message_id, message):
         composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
@@ -277,12 +301,24 @@ class DebateSimulator:
 
         prior_ontology.append(current_ontology)
 
-        app_state.set_state(f"prior_ontology{session_id}_", prior_ontology)
+        app_state.set_state(f"prior_ontology_{session_id}", prior_ontology)
 
         mermaid_to_ascii = self.ontological_feature_detection.mermaid_to_ascii(current_ontology)
         print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
 
-        message_history.append(message)
+        new_history_item = {
+            "data": {
+                "user_id": user_id,
+                "content": message,
+                "timestamp": datetime.now().isoformat(),
+                "message_id": message_id,
+                "topic": current_topic
+            },
+            "ontology": current_ontology,
+            "mermaid": mermaid_to_ascii
+        }
+
+        message_history.append(new_history_item)
 
         app_state.set_value(f"message_history_{session_id}", message_history)
 
@@ -331,9 +367,10 @@ class DebateSimulator:
 
         return updated_clusters
 
-    @staticmethod
-    async def broadcast_to_websocket_group(websocket_group, json_message):
-        for websocket in websocket_group:
+    async def broadcast_to_websocket_group(self, session_id, json_message):
+        with self._lock:
+            websockets = self.websocket_groups.get(session_id, [])
+        for websocket in websockets:
             await websocket.send_json(json_message)
 
     def check_generation_halting(self, generation_nonce):

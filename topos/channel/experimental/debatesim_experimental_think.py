@@ -270,7 +270,7 @@ class DebateSimulatorThink:
 
         prior_ontology.append(current_ontology)
 
-        app_state.set_state(f"prior_ontology{session_id}_", prior_ontology)
+        app_state.set_state(f"prior_ontology_{session_id}", prior_ontology)
 
         mermaid_to_ascii = self.ontological_feature_detection.mermaid_to_ascii(current_ontology)
         print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
