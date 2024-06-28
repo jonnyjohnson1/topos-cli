@@ -2,14 +2,16 @@
 
 import unittest
 from uuid import uuid4
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.testclient import TestClient
 from topos.services.database.app_state import AppState
 from topos.channel.debatesim import DebateSimulator
 import json
 import jwt
 from jwt.exceptions import InvalidTokenError
+import asyncio
 
 class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -79,7 +81,7 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
 
                 # Ensure message history is updated
                 message_history = app_state.get_value(f"message_history_{session_id}", [])
-                self.assertTrue(any(m["content"] == content for m in message_history if isinstance(m, dict)))
+                self.assertTrue(any(m["data"]["content"] == content for m in message_history if isinstance(m, dict)))
 
                 # Ensure prior ontology is updated
                 prior_ontology = app_state.get_value(f"prior_ontology_{session_id}", [])
