@@ -4,6 +4,7 @@ import os
 from uuid import uuid4
 
 from dotenv import load_dotenv
+import pprint
 
 import json
 from datetime import datetime
@@ -543,8 +544,9 @@ class DebateSimulator:
                     'claim': claim,
                     'counterclaim': counterclaim
                 }
-                print(
-                    f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
+                self.pretty_print_wepcc_result(user_id, cluster_id, wepcc_results[user_id][cluster_id])
+                # print(
+                #     f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
 
         print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
 
@@ -674,6 +676,12 @@ class DebateSimulator:
         print(f"\t[ reflect :: Completed ]")
 
         return results
+
+    def pretty_print_wepcc_result(self, user_id, cluster_id, wepcc_result):
+        pp = pprint.PrettyPrinter(indent=4)
+        print(f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} ]")
+        pp.pprint(wepcc_result)
+
 
 #alright! once again, same style, same acumen, boil over each and every one of those
 
