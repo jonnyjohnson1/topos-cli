@@ -63,12 +63,26 @@ async def get_sessions(token: str = Depends(OAuth2PasswordBearer(tokenUrl="token
     sessions = retrieve_sessions(user_id)
     return {"sessions": sessions}
 
+def load_accounts():
+    # Load accounts from a JSON file or other storage
+    # For simplicity, using a hardcoded dictionary here
+    return {
+        "userA": "pass",
+        "userB": "pass",
+        # Add more users as needed
+    }
+
+def save_accounts(accounts):
+    # Save accounts to a JSON file or other storage
+    pass  # Implement saving logic as needed
 
 # Add the route to issue JWT tokens
 @router.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    # Validate user credentials (for demo purposes, we're using a simple check)
-    if form_data.username != "user" or form_data.password != "pass":
+    accounts = load_accounts()
+
+    # Validate user credentials
+    if form_data.username not in accounts or accounts[form_data.username] != form_data.password:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     user_id = form_data.username  # Fetch the user_id based on your logic
@@ -79,6 +93,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     }
     token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
     return {"access_token": token, "token_type": "bearer"}
+
 
 
 # WebSocket endpoint with JWT validation
@@ -138,9 +153,9 @@ async def websocket_endpoint(websocket: WebSocket, token: Union[str, None] = Que
             }
 
             # Integrate the message and start processing
-            mermaid_ontology = await debate_simulator.integrate(token, json.dumps(integrate_data), debate_simulator.app_state)
+            mermaid_ontology = await debate_simulator.integrate(token, json.dumps(integrate_data), debate_simulator.app_state, False)
 
-            output_data = {}
+            output_data = {'mermaid_ontology': json.dumps(mermaid_ontology)}
 
             if config['message_topic_analysis'] or config['message_topic_mermaid_chart']:
                 print(f"\t[ save to conv cache :: conversation {session_id} ]")
@@ -182,7 +197,6 @@ async def websocket_endpoint(websocket: WebSocket, token: Union[str, None] = Que
                 "initial_analysis": output_data
             })
 
-            return mermaid_ontology
     except WebSocketDisconnect:
         await debate_simulator.remove_from_websocket_group(session_id, websocket)
 

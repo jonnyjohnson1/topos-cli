@@ -2,6 +2,7 @@ import json
 import logging
 
 
+from scipy.spatial.distance import pdist, squareform
 from sklearn.cluster import AgglomerativeClustering
 import numpy as np
 from openai import OpenAI
@@ -62,7 +63,8 @@ class ArgumentDetection:
 
         warrant = self.fetch_argument_warrant(cluster_sentences, word_max_warrant, extra_fingerprint="")
         evidence = self.fetch_argument_evidence(cluster_sentences, word_max_evidence, extra_fingerprint="")
-        persuasiveness_justification = self.fetch_argument_persuasiveness_justification(cluster_sentences, word_max_persuasiveness_justification, extra_fingerprint="")
+        # @note: this re-rolls because it needs to become quantized - a clipped mean would probably be best here.
+        persuasiveness_justification = self.fetch_argument_persuasiveness_justification(cluster_sentences, word_max_persuasiveness_justification, extra_fingerprint="", max_retries=30)
         claim = self.fetch_argument_claim(cluster_sentences, word_max_claim, extra_fingerprint="")
         counterclaim = self.fetch_argument_counter_claim(cluster_sentences, word_max_counter_claim, extra_fingerprint="")
 
@@ -184,7 +186,8 @@ class ArgumentDetection:
             logging.error(f"Error in fetch_argument_warrant: {e}")
             return None
 
-    def fetch_argument_persuasiveness_justification(self, cluster_sentences, word_max, extra_fingerprint=""):
+    def fetch_argument_persuasiveness_justification(self, cluster_sentences, word_max, extra_fingerprint="",
+                                                    max_retries=3):
 
         content_string = ""
 
@@ -196,7 +199,6 @@ class ArgumentDetection:
                                             [your output response-json should be of the form]
                                             {{\"role\": \"persuasiveness\", \"content\": {{\"persuasiveness_score\": \"_1-10 integer here_\", \"justification\": \"_summary of justification here, {word_max} max words!_\"}}}}"""
 
-        # Construct the JSON object using a Python dictionary and convert it to a JSON string
         messages = [
             {
                 "role": "system",
@@ -208,39 +210,56 @@ class ArgumentDetection:
             messages.append({"role": "user",
                              "content": f""" Cluster: 
                                             {cluster_sentences}"""})
-        # default temp is 0.3
         temperature = 0.3
-
-        # Use json.dumps to safely create a JSON string
-        # Attempt to parse the template as JSON
         formatted_json = json.dumps(messages, indent=4)
 
-        content_key = self.get_content_key(formatted_json + extra_fingerprint, self.max_tokens_persuasiveness_justification)
+        content_key = self.get_content_key(formatted_json + extra_fingerprint,
+                                           self.max_tokens_persuasiveness_justification)
 
         cached_response = self.cache_manager.load_from_cache(content_key)
         if cached_response:
-            return cached_response
+            # Validate the JSON format
+            try:
+                json.loads(cached_response.content)  # This will raise an error if the JSON is invalid
+                return cached_response
+            except json.JSONDecodeError as json_err:
+                logging.warning(f"JSONDecodeError on cached response: {json_err}")
 
-        try:
-            ollama_base = "http://localhost:11434/v1"
-            client = OpenAI(
-                base_url=ollama_base,
-                api_key="ollama",
-            )
 
-            response = client.chat.completions.create(
-                model=self.model_type,
-                messages=json.loads(formatted_json),
-                max_tokens=self.max_tokens_persuasiveness_justification,
-                n=1,
-                stop=None,
-                temperature=temperature)
-            self.cache_manager.save_to_cache(content_key, response.
-                                             choices[0].message)
-            return response.choices[0].message
-        except Exception as e:
-            logging.error(f"Error in fetch_argument_persuasiveness_justification: {e}")
-            return None
+        ollama_base = "http://localhost:11434/v1"
+        client = OpenAI(
+            base_url=ollama_base,
+            api_key="ollama",
+        )
+
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=self.model_type,
+                    messages=json.loads(formatted_json),
+                    max_tokens=self.max_tokens_persuasiveness_justification,
+                    n=1,
+                    stop=None,
+                    temperature=temperature)
+
+                response_content = response.choices[0].message
+
+                # Validate the JSON format
+                json.loads(response_content.content)  # This will raise an error if the JSON is invalid
+
+                self.cache_manager.save_to_cache(content_key, response_content)
+                return response_content
+
+            except json.JSONDecodeError as json_err:
+                logging.warning(f"JSONDecodeError on attempt {attempt + 1}/{max_retries}: {json_err}")
+                continue  # Retry on JSON decode error
+
+            except Exception as e:
+                logging.error(f"Error in fetch_argument_persuasiveness_justification: {e}")
+                break  # Break on other exceptions
+
+        logging.error(f"Failed to fetch valid argument persuasiveness justification after {max_retries} attempts.")
+        return None
 
     def fetch_argument_claim(self, cluster_sentences, word_max, extra_fingerprint=""):
 
@@ -366,11 +385,15 @@ class ArgumentDetection:
 
     def calculate_distance_matrix(self, embeddings):
         print("[INFO] Calculating semantic distance matrix...")
-        distance_matrix = np.zeros((len(embeddings), len(embeddings)))
-        for i in range(len(embeddings)):
-            for j in range(len(embeddings)):
-                if i != j:
-                    distance_matrix[i][j] = np.linalg.norm(embeddings[i] - embeddings[j])
+        # distance_matrix = np.zeros((len(embeddings), len(embeddings)))
+        # for i in range(len(embeddings)):
+        #     for j in range(len(embeddings)):
+        #         if i != j:
+        #             distance_matrix[i][j] = np.linalg.norm(embeddings[i] - embeddings[j])
+
+        # Use pdist to calculate the condensed distance matrix
+        distance_matrix = pdist(embeddings, metric='euclidean')
+
         print("[INFO] Distance matrix calculated.")
         return distance_matrix
 
@@ -380,8 +403,11 @@ class ArgumentDetection:
 
         # Perform Agglomerative Clustering based on the distance matrix
         print("[INFO] Performing hierarchical clustering...")
-        clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold, metric='euclidean', linkage='average')
-        clusters = clustering.fit_predict(distance_matrix)
+        clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold,
+                                             metric='precomputed', linkage='average')
+        # Convert condensed distance matrix back to a full square form for clustering
+        full_distance_matrix = squareform(distance_matrix)
+        clusters = clustering.fit_predict(full_distance_matrix)
 
         print("[INFO] Clustering complete. Clusters assigned:")
         for i, cluster in enumerate(clusters):

@@ -205,12 +205,8 @@ class DebateSimulator:
         await self.task_queue.join()
 
     async def reset_processing_queue(self):
-        await self._lock.acquire()
-        try:
-            # Pause the task processing to avoid new tasks being added while resetting
+        async with self._lock:
             self.running = False
-
-            # Cancel the current processing task
             if self.processing_task:
                 self.processing_task.cancel()
                 try:
@@ -218,7 +214,6 @@ class DebateSimulator:
                 except asyncio.CancelledError:
                     pass
 
-            # Clear the queue without calling task_done()
             while not self.task_queue.empty():
                 try:
                     self.task_queue.get_nowait()
@@ -226,13 +221,8 @@ class DebateSimulator:
                     break
 
             self.current_generation = None
-            print("Processing queue has been reset.")
-
-            # Resume task processing
             self.running = True
             self.processing_task = asyncio.create_task(self.process_tasks())
-        finally:
-            self._lock.release()
 
     async def start_processing(self):
         self.running = True
@@ -307,7 +297,7 @@ class DebateSimulator:
         else:
             return False
 
-    async def integrate(self, token, data, app_state):
+    async def integrate(self, token, data, app_state, cancel_old_tasks):
         payload = json.loads(data)
         message = payload["message"]
 
@@ -372,7 +362,8 @@ class DebateSimulator:
         # Create new Generation
         generation_nonce = self.generate_nonce()
 
-        await self.stop_all_reflect_tasks()
+        if cancel_old_tasks:
+            await self.stop_all_reflect_tasks()
 
         # print(f"Creating check_and_reflect task for message: {message_id}")
         task = {
@@ -474,9 +465,9 @@ class DebateSimulator:
             return
 
         # Perform incremental clustering if needed
-        previous_clusters = app_state.get_value(f"previous_clusters_{session_id}", {})
+        previous_clusters = app_state.get_value(f"previous_clusters_{session_id}_{user_id}", {})
         updated_clusters = self.incremental_clustering(clusters, previous_clusters)
-        app_state.set_value(f"previous_clusters_{session_id}", clusters)
+        app_state.set_value(f"previous_clusters_{session_id}_{user_id}", clusters)
 
         # Send updated cluster data back to frontend
         await self.broadcast_to_websocket_group(session_id, {
@@ -581,8 +572,8 @@ class DebateSimulator:
             if len(messages) > 1:
                 clusters = self.argument_detection.cluster_sentences(messages, distance_threshold=1.45)
                 clustered_messages[user_id] = {
-                    cluster_id: Cluster(cluster_id=cluster_id, sentences=cluster_sentences, user_id=user_id,
-                                        generation=generation, session_id=session_id)
+                    int(cluster_id): Cluster(cluster_id=int(cluster_id), sentences=cluster_sentences, user_id=user_id,
+                                             generation=generation, session_id=session_id)
                     for cluster_id, cluster_sentences in clusters.items()
                 }
             elif len(messages) == 1:
