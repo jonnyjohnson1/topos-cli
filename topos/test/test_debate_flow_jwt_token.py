@@ -86,7 +86,9 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
 
         message_data = [
             {"role": "user", "data": {"user_id": "userA", "content": "Human activity impacts climate change."}},
-            {"role": "user", "data": {"user_id": "userB", "content": "Natural cycles cause climate change."}}
+            {"role": "user", "data": {"user_id": "userB", "content": "Natural cycles cause climate change."}},
+            {"role": "user", "data": {"user_id": "userA", "content": "Dinosaurs didn't cause the world to warm up."}},
+            {"role": "user", "data": {"user_id": "userA", "content": "Asteroids are random and aren't the point."}}
         ]
 
         with client.websocket_connect(f"/ws?token={token}&session_id={session_id}") as websocket:
@@ -96,20 +98,20 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
                     "user_id": message["data"]["user_id"],
                     "generation_nonce": str(uuid4())
                 })
-                print(f"Sent message: {message['data']['content']}")
-                await asyncio.sleep(1)  # Increase wait time to allow for task processing
-                print("Finished waiting after sending message")
+                print(f"\t[ Sent message: {message['data']['content']} ]")
 
                 initial_response_received = False
                 clusters_received = False
                 updated_clusters_received = False
                 wepcc_result_received = False
+                final_results_received = False
 
                 # Wait for and process multiple responses
-                while not (initial_response_received and clusters_received and updated_clusters_received and wepcc_result_received):
+                while not (initial_response_received and clusters_received and updated_clusters_received
+                           and wepcc_result_received and final_results_received):
                     try:
                         response = websocket.receive_json()
-                        print(f"Received response: {response}")
+                        print(f"\t\t[ Received response: {response} ]")
 
                         if response["status"] == "message_processed":
                             self.assertIn("initial_analysis", response)
@@ -127,11 +129,15 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
                             self.assertIn("wepcc_result", response)
                             wepcc_result_received = True
 
+                        if response["status"] == "final_results":
+                            self.assertIn("results", response)
+                            final_results_received = True
+
                     except asyncio.TimeoutError:
                         print("Timeout waiting for WebSocket response")
                         self.fail("Test timed out waiting for response")
 
-            print(f"Messaged processed: {message['data']['content']}")
+                print(f"\t[ Messaged processed: {message['data']['content']} ]")
 
         print("Test completed")
 

@@ -210,11 +210,18 @@ class DebateSimulator:
             # Pause the task processing to avoid new tasks being added while resetting
             self.running = False
 
-            # Clear the queue
+            # Cancel the current processing task
+            if self.processing_task:
+                self.processing_task.cancel()
+                try:
+                    await self.processing_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Clear the queue without calling task_done()
             while not self.task_queue.empty():
                 try:
-                    task = self.task_queue.get_nowait()
-                    self.task_queue.task_done()
+                    self.task_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
 
@@ -223,12 +230,6 @@ class DebateSimulator:
 
             # Resume task processing
             self.running = True
-            if self.processing_task is not None:
-                self.processing_task.cancel()
-                try:
-                    await self.processing_task
-                except asyncio.CancelledError:
-                    pass
             self.processing_task = asyncio.create_task(self.process_tasks())
         finally:
             self._lock.release()
@@ -251,17 +252,21 @@ class DebateSimulator:
         while self.running:
             try:
                 task = await self.task_queue.get()
-                print(f"Processing task: {task['type']}")
-                if task['type'] == 'check_and_reflect':
-                    await self.execute_task(task)
-                else:
-                    print(f"Unknown task type: {task['type']}")
-                print(f"Finished processing task: {task['type']}")
+                print(f"\t\t\t[ Processing task: {task['type']} ]")
+                try:
+                    if task['type'] == 'check_and_reflect':
+                        await self.execute_task(task)
+                    else:
+                        print(f"Unknown task type: {task['type']}")
+                    print(f"\t\t\t[ Finished processing task: {task['type']} ]")
+                finally:
+                    self.task_queue.task_done()
+            except asyncio.CancelledError:
+                print("Task processing was cancelled")
+                break
             except Exception as e:
                 print(f"Error processing task: {e}")
                 traceback.print_exc()
-            finally:
-                self.task_queue.task_done()
         print("Stopped processing tasks")
 
     async def execute_task(self, task):
@@ -272,7 +277,7 @@ class DebateSimulator:
                                          task['message_id'], task['message'])
         elif task['type'] == 'broadcast':
             await self.websocket_broadcast(task['websocket'], task['message'])
-        print(f"Finished executing task: {task['type']}")
+        # print(f"Finished executing task: {task['type']}")
 
     async def websocket_broadcast(self, websocket, message):
         if message:
@@ -283,7 +288,7 @@ class DebateSimulator:
 
     async def get_ontology(self, user_id, session_id, message_id, message):
         composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
-        print(f"\t\t[ composable_string :: {composable_string} ]")
+        # print(f"\t\t[ composable_string :: {composable_string} ]")
 
         entities, pos_tags, dependencies, relations, srl_results, timestamp, context_entities = self.ontological_feature_detection.build_ontology_from_paragraph(
             user_id, session_id, message_id, composable_string)
@@ -338,7 +343,7 @@ class DebateSimulator:
 
         current_ontology = await self.get_ontology(user_id, session_id, message_id, message)
 
-        print(f"[ prior_ontology: {prior_ontology} ]")
+        # print(f"[ prior_ontology: {prior_ontology} ]")
         print(f"[ current_ontology: {current_ontology} ]")
 
         prior_ontology.append(current_ontology)
@@ -369,7 +374,7 @@ class DebateSimulator:
 
         await self.stop_all_reflect_tasks()
 
-        print(f"Creating check_and_reflect task for message: {message_id}")
+        # print(f"Creating check_and_reflect task for message: {message_id}")
         task = {
             'type': 'check_and_reflect',
             'session_id': session_id,
@@ -378,9 +383,9 @@ class DebateSimulator:
             'message_id': message_id,
             'message': message
         }
-        print(f"Task created: {task}")
+        # print(f"Task created: {task}")
         await self.add_task(task)
-        print(f"Task added to queue for message: {message_id}")
+        # print(f"Task added to queue for message: {message_id}")
 
         return current_ontology
 
@@ -430,7 +435,7 @@ class DebateSimulator:
         return False
 
     async def check_and_reflect(self, session_id, user_id, generation_nonce, message_id, message):
-        print(f"Starting check_and_reflect for message: {message_id}")
+        print(f"\t[ check_and_reflect started for message: {message_id} ]")
         # "Reflect"
         # cluster message callback
         # each cluster is defined by a cluster id (a hash of its messages, messages sorted alphabetically)
@@ -503,19 +508,29 @@ class DebateSimulator:
 
         # Check if there are enough clusters or users to perform argument matching
         if len(clusters) < 2:
-            if any(len(user_clusters) < 1 for user_clusters in clusters.values()):
-                print("\t[ reflect :: Not enough clusters or users to perform argument matching ]")
-                return
-            else:
-                print("\t[ reflect :: Not enough clusters, but returning user's clusters ]")
-                await self.broadcast_to_websocket_group(session_id, {
-                    "status": "final_results",
-                    "aggregated_scores": {},
-                    "unaddressed_clusters": {user_id: [cluster.to_dict() for cluster in user_clusters.values()] for
-                                             user_id, user_clusters in clusters.items()},
-                    "generation": generation_nonce
-                })
-                return
+            print("\t[ reflect :: Not enough clusters, but returning user's clusters ]")
+
+            # Initialize shadow coverage with no coverage
+            cluster_shadow_coverage = {user_id: {} for user_id in clusters.keys()}
+
+            # Assume wepcc_results are already calculated earlier in the process
+            unaddressed_score_multiplier = 2.5  # Example multiplier
+
+            # Call gather_final_results
+            aggregated_scores, addressed_clusters, unaddressed_clusters, results = self.gather_final_results(
+                cluster_shadow_coverage, wepcc_results, unaddressed_score_multiplier
+            )
+
+            await self.broadcast_to_websocket_group(session_id, {
+                "status": "final_results",
+                "generation": generation_nonce,
+                "aggregated_scores": aggregated_scores,
+                "addressed_clusters": addressed_clusters,
+                "unaddressed_clusters": unaddressed_clusters,
+                "results": results,
+            })
+
+            return
 
         # Define similarity cutoff threshold
         cutoff = 0.5
@@ -549,11 +564,16 @@ class DebateSimulator:
         app_state.set_state("addressed_clusters", addressed_clusters)
         app_state.set_state("unaddressed_clusters", unaddressed_clusters)
 
-        print(f"\t[ reflect :: Completed ]")
+        await self.broadcast_to_websocket_group(session_id, {
+            "status": "final_results",
+            "generation": generation_nonce,
+            "aggregated_scores": aggregated_scores,
+            "addressed_clusters": addressed_clusters,
+            "unaddressed_clusters": unaddressed_clusters,
+            "results": results,
+        })
 
-        print(f"Finished check_and_reflect for message: {message_id}")
-
-        final_callback(aggregated_scores, addressed_clusters, unaddressed_clusters, results)
+        print(f"\t[ check_and_reflect :: Completed ]")
 
     def cluster_messages(self, user_messages, generation, session_id):
         clustered_messages = {}
@@ -634,7 +654,6 @@ class DebateSimulator:
 
         for user_id, weight_mods in cluster_shadow_coverage.items():
             total_score = 0
-            aggregated_scores[user_id] = 0
             addressed_clusters[user_id] = []
             unaddressed_clusters[user_id] = []
 
@@ -684,6 +703,40 @@ class DebateSimulator:
             user_result["total_score"] = total_score
             results.append(user_result)
             print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
+
+            # Process remaining clusters without shadow coverage
+            for user_id, user_clusters in wepcc_results.items():
+                if user_id not in aggregated_scores:
+                    total_score = 0
+                    addressed_clusters[user_id] = []
+                    unaddressed_clusters[user_id] = []
+
+                    user_result = {"user": user_id, "clusters": []}
+
+                    for cluster_id, wepcc in user_clusters.items():
+                        if cluster_id not in cluster_shadow_coverage.get(user_id, {}):
+                            try:
+                                persuasiveness_object = json.loads(wepcc['persuasiveness_justification'])
+                                persuasiveness_score = float(persuasiveness_object['content']['persuasiveness_score'])
+                                unaddressed_score = persuasiveness_score * unaddressed_score_multiplier
+                                total_score += unaddressed_score
+                                unaddressed_clusters[user_id].append((cluster_id, unaddressed_score))
+                                user_result["clusters"].append({
+                                    "cluster": cluster_id,
+                                    "type": "unaddressed",
+                                    "score": unaddressed_score
+                                })
+                                print(
+                                    f"\t[ reflect :: Unaddressed score for User {user_id}, Cluster {cluster_id} :: {unaddressed_score} ]")
+                            except json.JSONDecodeError as e:
+                                print(
+                                    f"\t[ reflect :: JSONDecodeError for User {user_id}, Cluster {cluster_id} :: {e} ]")
+                                print(f"\t[ reflect :: Invalid JSON :: {wepcc['persuasiveness_justification']} ]")
+
+                    aggregated_scores[user_id] = total_score
+                    user_result["total_score"] = total_score
+                    results.append(user_result)
+                    print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
 
         return aggregated_scores, addressed_clusters, unaddressed_clusters, results
 
