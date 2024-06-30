@@ -61,23 +61,23 @@ class OntologicalFeatureDetection:
     def perform_ner(self, text):
         doc = self.nlp(text)
 
-        for token in doc:
-            print(f"{token.text}: {token.pos_}")
+        # for token in doc:
+        #     print(f"{token.text}: {token.pos_}")
 
         entities = [(ent.text, ent.label_) for ent in doc.ents]
-        print(f"\t[ NER results: {entities} ]")
+        # print(f"\t[ NER results: {entities} ]")
         return entities
 
     def perform_pos_tagging(self, text):
         doc = self.nlp(text)
         pos_tags = [(token.text, token.pos_) for token in doc]
-        print(f"\t[ POS tagging results: {pos_tags} ]")
+        # print(f"\t[ POS tagging results: {pos_tags} ]")
         return pos_tags
 
     def perform_dependency_parsing(self, text):
         doc = self.nlp(text)
         dependencies = [(token.text, token.dep_, token.head.text) for token in doc]
-        print(f"\t[ Dependency parsing results: {dependencies} ]")
+        # print(f"\t[ Dependency parsing results: {dependencies} ]")
         return dependencies
 
     def perform_srl(self, text):
@@ -93,7 +93,7 @@ class OntologicalFeatureDetection:
         comparative_scopes = []
         scope_start = None
         for i, token in enumerate(doc):
-            if token.pos_ == "ADJ" and doc[i + 1].text == "than":
+            if token.pos_ == "ADJ" and i < len(doc) - 1 and doc[i + 1].text == "than":
                 comparative = token.text
                 scope_start = i
             elif scope_start is not None and (token.pos_ == "CCONJ" or i == len(doc) - 1):
@@ -132,7 +132,7 @@ class OntologicalFeatureDetection:
                     srl_results.append(
                         {"entity": compared_entities[i], "role": "MORE_COMPLICATED", "word": comparative})
 
-        print(f"\t[ SRL results: {srl_results} ]")
+        # print(f"\t[ SRL results: {srl_results} ]")
 
         return srl_results
 

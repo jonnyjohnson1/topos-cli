@@ -205,22 +205,22 @@ async def chat(websocket: WebSocket):
         await websocket.close()
 
 
-@router.websocket("/websocket_debate")
-async def debate(websocket: WebSocket):
-    app_state = {"debate": {"topic": "Unknown", "messages": []}, "user_id": "userPRIME", "session_id": "sessionTEMP"}
-    await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_text()
-            result = await debate_simulator.integrate(websocket, data, app_state)
-            await websocket.send_json({"status": "integrated", "results": json.dumps(result)})
-    except WebSocketDisconnect:
-        print("[ WebSocket :: disconnected ]")
-    except Exception as e:
-        print(f"[ Exception in WebSocket endpoint :: {e} ]")
-        await websocket.send_json({"status": "error", "message": str(e)})
-        await websocket.close()
-        raise
+# @router.websocket("/websocket_debate")
+# async def debate(websocket: WebSocket):
+#     app_state = {"debate": {"topic": "Unknown", "messages": []}, "user_id": "userPRIME", "session_id": "sessionTEMP"}
+#     await websocket.accept()
+#     try:
+#         while True:
+#             data = await websocket.receive_text()
+#             result = await debate_simulator.integrate(websocket, data, app_state)
+#             await websocket.send_json({"status": "integrated", "results": json.dumps(result)})
+#     except WebSocketDisconnect:
+#         print("[ WebSocket :: disconnected ]")
+#     except Exception as e:
+#         print(f"[ Exception in WebSocket endpoint :: {e} ]")
+#         await websocket.send_json({"status": "error", "message": str(e)})
+#         await websocket.close()
+#         raise
 
 
 @router.websocket("/websocket_meta_chat")

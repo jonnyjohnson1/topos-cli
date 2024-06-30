@@ -1,3 +1,4 @@
+import umap
 import unittest
 import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import CountVectorizer
@@ -120,81 +121,105 @@ class TestBERTopicSVM(unittest.TestCase):
         print(f"Processing messages for {user_id}:\n")
         print(user_messages)
 
-        # Apply BERTopic with a minimum topic size
-        topic_model = BERTopic(min_topic_size=max(2, int(len(user_messages) / 6)))
-        topics, probs = topic_model.fit_transform(user_messages)
+        # Initialize variables for incremental processing
+        processed_messages = []
+        all_topics = []
 
-        # Get the topic information
-        topic_info = topic_model.get_topic_info()
-        print("Topic Info:")
-        print(topic_info)
+        for i, message in enumerate(user_messages):
+            processed_messages.append(message)
 
-        # Print topics and associated messages
-        for topic in topic_info.Topic:
-            if len(topic_info.Topic) == 1:
+            # Proceed only if there are at least two messages
+            if len(processed_messages) < 2:
+                continue
+
+            # Apply BERTopic incrementally
+            try:
+                if len(processed_messages) < 5:
+                    # Use a smaller n_neighbors for UMAP when the dataset is small
+                    topic_model = BERTopic(
+                        umap_model=umap.UMAP(n_neighbors=len(processed_messages) - 1, min_dist=0.1, n_components=5,
+                                             random_state=42))
+                else:
+                    topic_model = BERTopic()
+                topics, probs = topic_model.fit_transform(processed_messages)
+            except ValueError as e:
+                print(f"Skipping step {i + 1} due to insufficient data for UMAP: {e}")
+                continue
+            all_topics.append(topics[-1])  # Only add the latest topic
+
+            # Get the topic information
+            topic_info = topic_model.get_topic_info()
+            print("Topic Info:")
+            print(topic_info)
+
+            # Print topics and associated messages
+            for topic in topic_info.Topic:
+                if len(topic_info.Topic) == 1:
+                    if topic == -1:
+                        continue
+                topic_name = topic_info[topic_info.Topic == topic]['Name'].values[0]
+                print(f"\nTopic {topic} - {topic_name}:")
+                topic_docs = [processed_messages[i] for i, t in enumerate(topics) if t == topic]
+                for doc in topic_docs:
+                    print(f" - {doc}")
+
+            # Visualize topics incrementally
+            fig, ax = plt.subplots(figsize=(10, 6))
+            indices = range(len(processed_messages))
+            colors = [self.user_colors[user_id]] * len(processed_messages)
+            scatter = ax.scatter(indices, topics, color=colors)
+
+            ax.legend()
+            plt.xlabel('Sentence Index')
+            plt.ylabel('Topic')
+            plt.title(f'Topic Distribution for {user_id} at step {i + 1}')
+            plt.show()
+
+            # Train SVM classifier incrementally
+            vectorizer = CountVectorizer()
+            X = vectorizer.fit_transform(processed_messages)
+            y = pd.Series(topics)
+
+            # Split data into training and test sets with stratification
+            if len(y.unique()) > 1:
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+
+                # Create an SVM pipeline with parameter tuning
+                svm_pipeline = make_pipeline(StandardScaler(with_mean=False),
+                                             SVC(kernel='linear', probability=True, C=0.55))
+                svm_pipeline.fit(X_train, y_train)
+
+                # Predict and evaluate incrementally
+                y_pred = svm_pipeline.predict(X_test)
+                accuracy = accuracy_score(y_test, y_pred)
+                print(f'SVM Accuracy for {user_id} at step {i + 1}: {accuracy * 100:.2f}%')
+
+                if i > 0:  # Only check accuracy after the first step
+                    self.assertGreater(accuracy, 0.7, f"SVM accuracy for {user_id} should be above 70% at step {i + 1}")
+
+                # Visualize SVM predictions incrementally
+                svm_predictions = svm_pipeline.predict(X)
+                df = pd.DataFrame({'Sentence': processed_messages, 'SVM_Prediction': svm_predictions})
+
+                fig, ax = plt.subplots(figsize=(10, 6))
+                scatter = ax.scatter(indices, svm_predictions, color=colors)
+
+                plt.xlabel('Sentence Index')
+                plt.ylabel('SVM Predicted Topic')
+                plt.title(f'SVM Predicted Topic Distribution for {user_id} at step {i + 1}')
+                plt.show()
+            else:
+                print(f"Not enough classes in the data to train SVM for {user_id} at step {i + 1}.")
+
+            # Print clustered sentences by topic incrementally
+            for topic in y.unique():
                 if topic == -1:
                     continue
-            topic_name = topic_info[topic_info.Topic == topic]['Name'].values[0]
-            print(f"\nTopic {topic} - {topic_name}:")
-            topic_docs = [user_messages[i] for i, t in enumerate(topics) if t == topic]
-            for doc in topic_docs:
-                print(f" - {doc}")
-
-        # Visualize topics
-        fig, ax = plt.subplots(figsize=(10, 6))
-        indices = range(len(user_messages))
-        colors = [self.user_colors[user_id]] * len(user_messages)
-        scatter = ax.scatter(indices, topics, color=colors)
-
-        ax.legend()
-        plt.xlabel('Sentence Index')
-        plt.ylabel('Topic')
-        plt.title(f'Topic Distribution for {user_id}')
-        plt.show()
-
-        # Train SVM classifier
-        vectorizer = CountVectorizer()
-        X = vectorizer.fit_transform(user_messages)
-        y = pd.Series(topics)
-
-        # Split data into training and test sets with stratification
-        if len(y.unique()) > 1:
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
-
-            # Create an SVM pipeline with parameter tuning
-            svm_pipeline = make_pipeline(StandardScaler(with_mean=False), SVC(kernel='linear', probability=True, C=0.55))
-            svm_pipeline.fit(X_train, y_train)
-
-            # Predict and evaluate
-            y_pred = svm_pipeline.predict(X_test)
-            accuracy = accuracy_score(y_test, y_pred)
-            print(f'SVM Accuracy for {user_id}: {accuracy * 100:.2f}%')
-
-            self.assertGreater(accuracy, 0.7, f"SVM accuracy for {user_id} should be above 70%")
-
-            # Visualize SVM predictions
-            svm_predictions = svm_pipeline.predict(X)
-            df = pd.DataFrame({'Sentence': user_messages, 'SVM_Prediction': svm_predictions})
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-            scatter = ax.scatter(indices, svm_predictions, color=colors)
-
-            plt.xlabel('Sentence Index')
-            plt.ylabel('SVM Predicted Topic')
-            plt.title(f'SVM Predicted Topic Distribution for {user_id}')
-            plt.show()
-        else:
-            print(f"Not enough classes in the data to train SVM for {user_id}.")
-
-        # Print clustered sentences by topic
-        for topic in y.unique():
-            if topic == -1:
-                continue
-            topic_name = topic_info[topic_info.Topic == topic]['Name'].values[0]
-            print(f"\nTopic {topic} - {topic_name}:")
-            topic_docs = [user_messages[i] for i, t in enumerate(topics) if t == topic]
-            for doc in topic_docs:
-                print(f" - {doc}")
+                topic_name = topic_info[topic_info.Topic == topic]['Name'].values[0]
+                print(f"\nTopic {topic} - {topic_name}:")
+                topic_docs = [processed_messages[i] for i, t in enumerate(topics) if t == topic]
+                for doc in topic_docs:
+                    print(f" - {doc}")
 
     def test_process_users(self):
         for user_id in self.user_data:

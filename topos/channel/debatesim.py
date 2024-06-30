@@ -1,10 +1,13 @@
 # topos/channel/debatesim.py
 import hashlib
+import asyncio
+
+import traceback
 
 from typing import Dict, List
+import pprint
 
 import os
-import threading
 from queue import Queue
 
 from datetime import datetime, timedelta, UTC
@@ -110,12 +113,12 @@ class Cluster:
 
 class DebateSimulator:
     _instance = None
-    _lock = threading.Lock()
+    _lock = asyncio.Lock()
 
     @staticmethod
-    def get_instance():
+    async def get_instance():
         if DebateSimulator._instance is None:
-            with DebateSimulator._lock:
+            async with DebateSimulator._lock:
                 if DebateSimulator._instance is None:
                     DebateSimulator._instance = DebateSimulator()
         return DebateSimulator._instance
@@ -156,10 +159,9 @@ class DebateSimulator:
             self.current_generation = None
             self.websocket_groups = {}
 
-            self.task_queue = Queue()
-            self.processing_thread = threading.Thread(target=self.process_tasks)
-            self.processing_thread.daemon = True
-            self.processing_thread.start()
+            self.task_queue = asyncio.Queue()
+            self.processing_task = None
+            self.running = False
 
     def generate_jwt_token(self, user_id, session_id):
         payload = {
@@ -170,76 +172,116 @@ class DebateSimulator:
         token = jwt.encode(payload, self.jwt_secret, algorithm="HS256")
         return token
 
-    def add_to_websocket_group(self, session_id, websocket):
-        with self._lock:
+    async def add_to_websocket_group(self, session_id, websocket):
+        await self._lock.acquire()
+        try:
             if session_id not in self.websocket_groups:
                 self.websocket_groups[session_id] = []
             self.websocket_groups[session_id].append(websocket)
+        finally:
+            self._lock.release()
 
-    def remove_from_websocket_group(self, session_id, websocket):
-        with self._lock:
+    async def remove_from_websocket_group(self, session_id, websocket):
+        await self._lock.acquire()
+        try:
             if session_id in self.websocket_groups:
                 self.websocket_groups[session_id].remove(websocket)
                 if not self.websocket_groups[session_id]:
                     del self.websocket_groups[session_id]
+        finally:
+            self._lock.release()
 
-    def add_task(self, task):
-        self.task_queue.put(task)
+    async def add_task(self, task):
+        print(f"Adding task to queue: {task['type']}")
+        await self.task_queue.put(task)
+        print(f"Task added to queue: {task['type']}")
 
-    def reset_processing_queue(self):
-        # Logic to reset the processing queue
-        with self.task_queue.mutex:
-            self.task_queue.queue.clear()
-        self.current_generation = None
-        print("Processing queue has been reset.")
+        if not self.running:
+            print("Starting task processing")
+            await asyncio.sleep(0)  # Yield control to the event loop
+            await self.start_processing()
 
-    def process_tasks(self):
-        while True:
-            task = self.task_queue.get()
+    async def wait_for_tasks(self):
+        await self.task_queue.join()
+
+    async def reset_processing_queue(self):
+        await self._lock.acquire()
+        try:
+            # Pause the task processing to avoid new tasks being added while resetting
+            self.running = False
+
+            # Clear the queue
+            while not self.task_queue.empty():
+                try:
+                    task = self.task_queue.get_nowait()
+                    self.task_queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
+
+            self.current_generation = None
+            print("Processing queue has been reset.")
+
+            # Resume task processing
+            self.running = True
+            if self.processing_task is not None:
+                self.processing_task.cancel()
+                try:
+                    await self.processing_task
+                except asyncio.CancelledError:
+                    pass
+            self.processing_task = asyncio.create_task(self.process_tasks())
+        finally:
+            self._lock.release()
+
+    async def start_processing(self):
+        self.running = True
+        self.processing_task = asyncio.create_task(self.process_tasks())
+
+    async def stop_processing(self):
+        self.running = False
+        if self.processing_task:
+            self.processing_task.cancel()
             try:
-                if task['type'] == 'reset':
-                    self.reset_processing_queue()
+                await self.processing_task
+            except asyncio.CancelledError:
+                pass
+
+    async def process_tasks(self):
+        print("Starting to process tasks")
+        while self.running:
+            try:
+                task = await self.task_queue.get()
+                print(f"Processing task: {task['type']}")
+                if task['type'] == 'check_and_reflect':
+                    await self.execute_task(task)
                 else:
-                    self.execute_task(task)
+                    print(f"Unknown task type: {task['type']}")
+                print(f"Finished processing task: {task['type']}")
             except Exception as e:
                 print(f"Error processing task: {e}")
+                traceback.print_exc()
             finally:
                 self.task_queue.task_done()
+        print("Stopped processing tasks")
 
-    def reset_processing_queue(self):
-        # Logic to reset the processing queue
-        with self.task_queue.mutex:
-            self.task_queue.queue.clear()
-        self.current_generation = None
-        print("Processing queue has been reset.")
-
-    def execute_task(self, task):
-        # Process the task based on its type and data
+    async def execute_task(self, task):
+        print(f"Executing task: {task['type']}")
         if task['type'] == 'check_and_reflect':
             self.current_generation = task['generation_nonce']
-            self.check_and_reflect(task['session_id'], task['user_id'], task['generation_nonce'], task['message_id'], task['message'])
+            await self.check_and_reflect(task['session_id'], task['user_id'], task['generation_nonce'],
+                                         task['message_id'], task['message'])
         elif task['type'] == 'broadcast':
-            self.start_broadcast_subprocess(task['websocket'], task['message'])
-        # Add other task types as needed
-        print(f"Executed task: {task['type']}")
+            await self.websocket_broadcast(task['websocket'], task['message'])
+        print(f"Finished executing task: {task['type']}")
 
-    @staticmethod
-    def websocket_broadcast(websocket, message):
-        while True:
-            if message:  # Condition to broadcast
-                websocket.send(message)
-            time.sleep(1)  # Adjust as necessary
+    async def websocket_broadcast(self, websocket, message):
+        if message:
+            await websocket.send_text(message)
 
-    # Function to start the subprocess
-    def start_broadcast_subprocess(self, websocket, message):
-        broadcast_thread = threading.Thread(target=self.websocket_broadcast, args=(websocket, message))
-        broadcast_thread.start()
+    async def stop_all_reflect_tasks(self):
+        await self.reset_processing_queue()
 
-    def stop_all_reflect_tasks(self):
-        self.add_task({'type': 'reset'})
-        self.process_tasks()
-
-    def get_ontology(self, user_id, session_id, message_id, message):
+    async def get_ontology(self, user_id, session_id, message_id, message):
         composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
         print(f"\t\t[ composable_string :: {composable_string} ]")
 
@@ -260,8 +302,6 @@ class DebateSimulator:
         else:
             return False
 
-
-    # @note: integrate is post, due to constant
     async def integrate(self, token, data, app_state):
         payload = json.loads(data)
         message = payload["message"]
@@ -278,10 +318,12 @@ class DebateSimulator:
         try:
             decoded_token = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
             user_id = decoded_token.get("user_id", "")
-            session_id = decoded_token.get("session_id", "")
         except InvalidTokenError:
+            print(f"Invalid JWT token error :: {token}")
             # await websocket.send_json({"status": "error", "response": "Invalid JWT token"})
             return
+
+        session_id = payload.get("session_id", "")
 
         # if no user_id, bail
         if user_id == "" or session_id == "":
@@ -294,7 +336,7 @@ class DebateSimulator:
 
         prior_ontology = app_state.get_value(f"prior_ontology_{session_id}", [])
 
-        current_ontology = self.get_ontology(user_id, session_id, message_id, message)
+        current_ontology = await self.get_ontology(user_id, session_id, message_id, message)
 
         print(f"[ prior_ontology: {prior_ontology} ]")
         print(f"[ current_ontology: {current_ontology} ]")
@@ -325,16 +367,20 @@ class DebateSimulator:
         # Create new Generation
         generation_nonce = self.generate_nonce()
 
-        self.stop_all_reflect_tasks()
+        await self.stop_all_reflect_tasks()
 
-        self.add_task({
+        print(f"Creating check_and_reflect task for message: {message_id}")
+        task = {
             'type': 'check_and_reflect',
             'session_id': session_id,
             'user_id': user_id,
             'generation_nonce': generation_nonce,
             'message_id': message_id,
-            'message': message}
-        )
+            'message': message
+        }
+        print(f"Task created: {task}")
+        await self.add_task(task)
+        print(f"Task added to queue for message: {message_id}")
 
         return current_ontology
 
@@ -368,10 +414,14 @@ class DebateSimulator:
         return updated_clusters
 
     async def broadcast_to_websocket_group(self, session_id, json_message):
-        with self._lock:
+        await self._lock.acquire()
+        try:
             websockets = self.websocket_groups.get(session_id, [])
-        for websocket in websockets:
-            await websocket.send_json(json_message)
+
+            for websocket in websockets:
+                await websocket.send_json(json_message)
+        finally:
+            self._lock.release()
 
     def check_generation_halting(self, generation_nonce):
         if self.current_generation is not None and self.current_generation != generation_nonce:
@@ -380,6 +430,7 @@ class DebateSimulator:
         return False
 
     async def check_and_reflect(self, session_id, user_id, generation_nonce, message_id, message):
+        print(f"Starting check_and_reflect for message: {message_id}")
         # "Reflect"
         # cluster message callback
         # each cluster is defined by a cluster id (a hash of its messages, messages sorted alphabetically)
@@ -407,10 +458,8 @@ class DebateSimulator:
         clusters = self.cluster_messages(user_messages, generation_nonce, session_id)
         print(f"\t[ reflect :: clustered_messages :: {clusters} ]")
 
-        websocket_group = app_state.get_value(f"websocket_group_{session_id}", [])
-
         # Send initial cluster data back to frontend
-        await self.broadcast_to_websocket_group(websocket_group, {
+        await self.broadcast_to_websocket_group(session_id, {
             "status": "initial_clusters",
             "clusters": {user_id: [cluster.to_dict() for cluster in user_clusters.values()] for user_id, user_clusters
                          in clusters.items()},
@@ -425,7 +474,7 @@ class DebateSimulator:
         app_state.set_value(f"previous_clusters_{session_id}", clusters)
 
         # Send updated cluster data back to frontend
-        await self.broadcast_to_websocket_group(websocket_group, {
+        await self.broadcast_to_websocket_group(session_id, {
             "status": "updated_clusters",
             "clusters": {user_id: [cluster.to_dict() for cluster in user_clusters.values()] for user_id, user_clusters
                          in updated_clusters.items()},
@@ -435,7 +484,7 @@ class DebateSimulator:
             return
 
         async def report_wepcc_result(generation_nonce, user_id, cluster_id, cluster_hash, wepcc_result):
-            await self.broadcast_to_websocket_group(websocket_group, {
+            await self.broadcast_to_websocket_group(session_id, {
                 "status": "wepcc_result",
                 "generation": generation_nonce,
                 "user_id": user_id,
@@ -449,12 +498,24 @@ class DebateSimulator:
         # Step 3: Run WEPCC on each cluster
         # these each take a bit to process, so we're passing in the websocket group to stream the results back out
         # due to timing these may be inconsequential re: generation, but they're going to send back the results anyhow.
-        wepcc_results = self.wepcc_cluster(updated_clusters, report_wepcc_result)
+        wepcc_results = await self.wepcc_cluster(updated_clusters, report_wepcc_result)
         print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
 
-        if len(clusters) < 2 or any(len(user_clusters) < 1 for user_clusters in clusters.values()):
-            print("\t[ reflect :: Not enough clusters or users to perform argument matching ]")
-            return
+        # Check if there are enough clusters or users to perform argument matching
+        if len(clusters) < 2:
+            if any(len(user_clusters) < 1 for user_clusters in clusters.values()):
+                print("\t[ reflect :: Not enough clusters or users to perform argument matching ]")
+                return
+            else:
+                print("\t[ reflect :: Not enough clusters, but returning user's clusters ]")
+                await self.broadcast_to_websocket_group(session_id, {
+                    "status": "final_results",
+                    "aggregated_scores": {},
+                    "unaddressed_clusters": {user_id: [cluster.to_dict() for cluster in user_clusters.values()] for
+                                             user_id, user_clusters in clusters.items()},
+                    "generation": generation_nonce
+                })
+                return
 
         # Define similarity cutoff threshold
         cutoff = 0.5
@@ -490,7 +551,9 @@ class DebateSimulator:
 
         print(f"\t[ reflect :: Completed ]")
 
-        return results
+        print(f"Finished check_and_reflect for message: {message_id}")
+
+        final_callback(aggregated_scores, addressed_clusters, unaddressed_clusters, results)
 
     def cluster_messages(self, user_messages, generation, session_id):
         clustered_messages = {}
@@ -498,12 +561,20 @@ class DebateSimulator:
             if len(messages) > 1:
                 clusters = self.argument_detection.cluster_sentences(messages, distance_threshold=1.45)
                 clustered_messages[user_id] = {
-                    cluster_id: Cluster(user_id, generation, session_id, cluster_id, cluster_sentences)
+                    cluster_id: Cluster(cluster_id=cluster_id, sentences=cluster_sentences, user_id=user_id,
+                                        generation=generation, session_id=session_id)
                     for cluster_id, cluster_sentences in clusters.items()
+                }
+            elif len(messages) == 1:
+                # Create a single cluster for the lone message
+                cluster_id = 0
+                clustered_messages[user_id] = {
+                    cluster_id: Cluster(cluster_id=cluster_id, sentences=messages, user_id=user_id,
+                                        generation=generation, session_id=session_id)
                 }
         return clustered_messages
 
-    def wepcc_cluster(self, clusters: Dict[str, Cluster], report_wepcc_result):
+    async def wepcc_cluster(self, clusters: Dict[str, Cluster], report_wepcc_result):
         wepcc_results = {}
         for user_id, user_clusters in clusters.items():
             wepcc_results[user_id] = {}
@@ -518,11 +589,12 @@ class DebateSimulator:
                     'claim': claim,
                     'counterclaim': counterclaim
                 }
-                print(
-                    f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
+                self.pretty_print_wepcc_result(user_id, cluster_id, wepcc_results[user_id][cluster_id])
+                # print(
+                #     f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
 
                 # Output to websocket
-                report_wepcc_result(cluster.cluster_hash, user_id, cluster_id, cluster.cluster_hash,
+                await report_wepcc_result(cluster.cluster_hash, user_id, cluster_id, cluster.cluster_hash,
                                     wepcc_results[user_id][cluster_id])
         return wepcc_results
 
@@ -562,6 +634,7 @@ class DebateSimulator:
 
         for user_id, weight_mods in cluster_shadow_coverage.items():
             total_score = 0
+            aggregated_scores[user_id] = 0
             addressed_clusters[user_id] = []
             unaddressed_clusters[user_id] = []
 
@@ -640,3 +713,7 @@ class DebateSimulator:
                         f"\t[ reflect :: Combined score for {user_id} (cluster {cluster_idA}) :: {shadow_coverage} ]")
 
         return final_scores
+
+    def pretty_print_wepcc_result(self, user_id, cluster_id, wepcc_result):
+        pp = pprint.PrettyPrinter(indent=4)
+        print(f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} ]")
