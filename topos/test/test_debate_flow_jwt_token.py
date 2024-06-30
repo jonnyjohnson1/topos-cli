@@ -1,5 +1,6 @@
 # test_debate_flow_jwt_token.py
 
+import re
 import os
 import unittest
 from uuid import uuid4
@@ -80,8 +81,35 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
         except InvalidTokenError:
             self.fail("JWT token validation failed")
 
+    def break_into_sentences(self, messages, min_words=20):
+        output = []
+        for message in messages:
+            content = message["data"]["content"]
+            sentences = re.split(r'[.!?]+', content)
+            sentences = [s.strip() for s in sentences if s.strip()]
+
+            current_sentence = []
+
+            for sentence in sentences:
+                words = sentence.split()
+                if len(current_sentence) + len(words) >= min_words:
+                    output.append({"role": message["role"], "data": {"user_id": message["data"]["user_id"],
+                                                                     "content": " ".join(current_sentence)}})
+                    current_sentence = words
+                else:
+                    current_sentence.extend(words)
+
+            if current_sentence:
+                output.append({"role": message["role"],
+                               "data": {"user_id": message["data"]["user_id"], "content": " ".join(current_sentence)}})
+
+        return output
+
     def test_debate_flow_with_jwt(self):
         client = TestClient(app)
+
+        response = client.post("/admin_set_accounts", data={"userA": "pass", "userB": "pass"})
+        self.assertEqual(response.status_code, 200)
 
         # Create tokens for two users
         response = client.post("/token", data={"username": "userA", "password": "pass"})
@@ -114,12 +142,18 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
             {"role": "user", "data": {"user_id": "userB", "content": "Asteroids are random and aren't the point."}}
         ]
 
+        unique_users = set(message["data"]["user_id"] for message in message_data)
+        user_a_name, user_b_name = list(unique_users)
+
+        message_data = self.break_into_sentences(message_data)
+
+
         # Open WebSocket connections for both users
         with client.websocket_connect(f"/ws?token={token_user_a}&session_id={session_id}") as websocket_a, \
              client.websocket_connect(f"/ws?token={token_user_b}&session_id={session_id}") as websocket_b:
 
             for message in message_data:
-                if message["data"]["user_id"] == "userA":
+                if message["data"]["user_id"] == user_a_name:
                     websocket_a.send_json({
                         "message": message["data"]["content"],
                         "user_id": message["data"]["user_id"],
@@ -143,7 +177,7 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
                 # Wait for and process multiple responses
                 while not (initial_response_received and clusters_received and updated_clusters_received
                            and wepcc_result_received and final_results_received):
-                    if message["data"]["user_id"] == "userA":
+                    if message["data"]["user_id"] == user_a_name:
                         response = websocket_a.receive_json()
                     else:
                         response = websocket_b.receive_json()

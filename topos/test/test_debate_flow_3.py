@@ -160,6 +160,9 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
                                       "content": "I supported Roe v. Wade, which had three trimesters. First time is between a woman and a doctor. Second time is between a doctor and an extreme situation. A third time is between the doctor – I mean, it'd be between the woman and the state. The idea that the politicians – that the founders wanted the politicians to be the ones making decisions about a woman's health is ridiculous. That's the last – no politician should be making that decision. A doctor should be making those decisions. That's how it should be run. That's what you're going to do. And if I'm elected, I'm going to restore Roe v. Wade."}}
         ]
 
+        unique_users = set(message["data"]["user_id"] for message in message_data)
+        user_a_name, user_b_name = list(unique_users)
+
         message_data = self.break_into_sentences(message_data)
 
         # Open WebSocket connections for both users
@@ -167,7 +170,7 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
              client.websocket_connect(f"/ws?token={token_user_b}&session_id={session_id}") as websocket_b:
 
             for message in message_data:
-                if message["data"]["user_id"] == "userA":
+                if message["data"]["user_id"] == user_a_name:
                     websocket_a.send_json({
                         "message": message["data"]["content"],
                         "user_id": message["data"]["user_id"],
@@ -191,7 +194,7 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
                 # Wait for and process multiple responses
                 while not (initial_response_received and clusters_received and updated_clusters_received
                            and wepcc_result_received and final_results_received):
-                    if message["data"]["user_id"] == "userA":
+                    if message["data"]["user_id"] == user_a_name:
                         response = websocket_a.receive_json()
                     else:
                         response = websocket_b.receive_json()
