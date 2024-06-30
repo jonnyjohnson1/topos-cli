@@ -14,7 +14,7 @@ from topos.FC.similitude_module import load_model, util
 
 class ArgumentDetection:
     def __init__(self, api_key, model="ollama:solar", max_tokens_warrant=128, max_tokens_evidence=128,
-                 max_tokens_persuasiveness_justification=128, max_tokens_claim=128, max_tokens_counter_claim=128,
+                 max_tokens_persuasiveness_justification=160, max_tokens_claim=128, max_tokens_counter_claim=128,
                  cache_enabled=True):
         self.api_key = api_key
         self.model_provider, self.model_type = self.parse_model(model)
@@ -61,12 +61,12 @@ class ArgumentDetection:
         word_max_claim = 20
         word_max_counter_claim = 30
 
-        warrant = self.fetch_argument_warrant(cluster_sentences, word_max_warrant, extra_fingerprint="")
-        evidence = self.fetch_argument_evidence(cluster_sentences, word_max_evidence, extra_fingerprint="")
+        warrant = self.fetch_argument_warrant(cluster_sentences, word_max_warrant, extra_fingerprint)
+        evidence = self.fetch_argument_evidence(cluster_sentences, word_max_evidence, extra_fingerprint)
         # @note: this re-rolls because it needs to become quantized - a clipped mean would probably be best here.
-        persuasiveness_justification = self.fetch_argument_persuasiveness_justification(cluster_sentences, word_max_persuasiveness_justification, extra_fingerprint="", max_retries=50)
-        claim = self.fetch_argument_claim(cluster_sentences, word_max_claim, extra_fingerprint="")
-        counterclaim = self.fetch_argument_counter_claim(cluster_sentences, word_max_counter_claim, extra_fingerprint="")
+        persuasiveness_justification = self.fetch_argument_persuasiveness_justification(cluster_sentences, word_max_persuasiveness_justification, extra_fingerprint, max_retries=50)
+        claim = self.fetch_argument_claim(cluster_sentences, word_max_claim, extra_fingerprint)
+        counterclaim = self.fetch_argument_counter_claim(cluster_sentences, word_max_counter_claim, extra_fingerprint)
 
         return warrant.content, evidence.content, persuasiveness_justification.content, claim.content, counterclaim.content
 
@@ -75,7 +75,7 @@ class ArgumentDetection:
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, identify the underlying reasoning or assumption that connects the evidence to the claim. Provide a concise summary of the warrant.
+            content_string = f"""Given the following cluster of sentences, identify the underlying reasoning or assumption that connects the evidence to the claim. Provide a concise summary of the warrant only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
@@ -133,7 +133,7 @@ class ArgumentDetection:
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, identify the pieces of evidence that support the claim. Provide a concise summary of the evidence.
+            content_string = f"""Given the following cluster of sentences, identify the pieces of evidence that support the claim. Provide a concise summary of the evidence only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
@@ -192,7 +192,7 @@ class ArgumentDetection:
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, evaluate the persuasiveness of the arguments presented. Rate the persuasiveness on a scale from 1 to 10 and provide a brief justification.
+            content_string = f"""Given the following cluster of sentences, evaluate the persuasiveness of the arguments presented only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
@@ -220,10 +220,14 @@ class ArgumentDetection:
         if cached_response:
             # Validate the JSON format
             try:
-                json.loads(cached_response.content)  # This will raise an error if the JSON is invalid
+                found = json.loads(cached_response.content)  # This will raise an error if the JSON is invalid
+                persuasiveness_score = float(found['content']['persuasiveness_score'])  # this will also raise an error
+
                 return cached_response
             except json.JSONDecodeError as json_err:
                 logging.warning(f"JSONDecodeError on cached response: {json_err}")
+            except ValueError as value_err:
+                logging.warning(f"ValueError on cached response: {value_err}")
 
 
         ollama_base = "http://localhost:11434/v1"
@@ -231,6 +235,9 @@ class ArgumentDetection:
             base_url=ollama_base,
             api_key="ollama",
         )
+
+        cur_message = ""
+        cur_response_content = ""
 
         for attempt in range(max_retries):
             try:
@@ -244,15 +251,27 @@ class ArgumentDetection:
 
                 response_content = response.choices[0].message
 
+                # for debug/refinement of the prompt
+                cur_message = json.loads(formatted_json)
+                cur_response_content = response_content
+
                 # Validate the JSON format
-                json.loads(response_content.content)  # This will raise an error if the JSON is invalid
+                # print(f"response: {response_content.content}")
+                found = json.loads(response_content.content)  # This will raise an error if the JSON is invalid
+                persuasiveness_score = float(found['content']['persuasiveness_score'])  # this will also raise an error
 
                 self.cache_manager.save_to_cache(content_key, response_content)
                 return response_content
 
             except json.JSONDecodeError as json_err:
+                print(f"cur_message: {cur_message}")
+                print(f"response: {cur_response_content.content}")
                 logging.warning(f"JSONDecodeError on attempt {attempt + 1}/{max_retries}: {json_err}")
                 continue  # Retry on JSON decode error
+
+            except ValueError as value_err:
+                logging.warning(f"ValueError on attempt {attempt + 1}/{max_retries}: {value_err}")
+                continue  # Retry on Value error
 
             except Exception as e:
                 logging.error(f"Error in fetch_argument_persuasiveness_justification: {e}")
@@ -266,7 +285,7 @@ class ArgumentDetection:
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, identify the main claim or assertion made. Provide a concise summary of the claim.
+            content_string = f"""Given the following cluster of sentences, identify the main claim or assertion made. Provide a concise summary of the claim only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
@@ -324,7 +343,7 @@ class ArgumentDetection:
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, identify any counterclaims or opposing arguments presented. Provide a concise summary of the counterclaims.
+            content_string = f"""Given the following cluster of sentences, identify any counterclaims or opposing arguments presented. Provide a concise summary of the counterclaims only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
