@@ -64,7 +64,7 @@ class ArgumentDetection:
         warrant = self.fetch_argument_warrant(cluster_sentences, word_max_warrant, extra_fingerprint="")
         evidence = self.fetch_argument_evidence(cluster_sentences, word_max_evidence, extra_fingerprint="")
         # @note: this re-rolls because it needs to become quantized - a clipped mean would probably be best here.
-        persuasiveness_justification = self.fetch_argument_persuasiveness_justification(cluster_sentences, word_max_persuasiveness_justification, extra_fingerprint="", max_retries=30)
+        persuasiveness_justification = self.fetch_argument_persuasiveness_justification(cluster_sentences, word_max_persuasiveness_justification, extra_fingerprint="", max_retries=50)
         claim = self.fetch_argument_claim(cluster_sentences, word_max_claim, extra_fingerprint="")
         counterclaim = self.fetch_argument_counter_claim(cluster_sentences, word_max_counter_claim, extra_fingerprint="")
 
@@ -397,17 +397,34 @@ class ArgumentDetection:
         print("[INFO] Distance matrix calculated.")
         return distance_matrix
 
+    def calculate_distance_matrix_square(self, embeddings):
+        print("[INFO] Calculating semantic distance matrix...")
+        distance_matrix = np.zeros((len(embeddings), len(embeddings)))
+        for i in range(len(embeddings)):
+            for j in range(len(embeddings)):
+                if i != j:
+                    distance_matrix[i][j] = np.linalg.norm(embeddings[i] - embeddings[j])
+
+        print("[INFO] Distance matrix calculated.")
+        return distance_matrix
+
     def cluster_sentences(self, sentences, distance_threshold=1.5):  # Adjust distance_threshold here
         embeddings = self.get_embeddings(sentences)
-        distance_matrix = self.calculate_distance_matrix(embeddings)
+        distance_matrix = self.calculate_distance_matrix_square(embeddings)
+        # distance_matrix = self.calculate_distance_matrix(embeddings)
 
         # Perform Agglomerative Clustering based on the distance matrix
         print("[INFO] Performing hierarchical clustering...")
         clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold,
-                                             metric='precomputed', linkage='average')
+                                             metric='euclidean', linkage='average')
+        clusters = clustering.fit_predict(distance_matrix)
+
+        # @note: @jonny - this might be better - testing
+        # clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold,
+        #                                      metric='precomputed', linkage='average')
         # Convert condensed distance matrix back to a full square form for clustering
-        full_distance_matrix = squareform(distance_matrix)
-        clusters = clustering.fit_predict(full_distance_matrix)
+        # full_distance_matrix = squareform(distance_matrix)
+        # clusters = clustering.fit_predict(full_distance_matrix)
 
         print("[INFO] Clustering complete. Clusters assigned:")
         for i, cluster in enumerate(clusters):

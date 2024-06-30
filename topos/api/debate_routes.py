@@ -1,8 +1,11 @@
 # debate_routes.py
 
+from typing import Dict
+
 import os
 from dotenv import load_dotenv
 
+from fastapi import FastAPI, Form, Depends, APIRouter
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 
@@ -51,6 +54,7 @@ async def create_session(token: str = Depends(OAuth2PasswordBearer(tokenUrl="tok
     store_session(user_id, session_id)
     return {"session_id": session_id}
 
+
 @router.get("/sessions")
 async def get_sessions(token: str = Depends(OAuth2PasswordBearer(tokenUrl="token"))):
     try:
@@ -63,18 +67,29 @@ async def get_sessions(token: str = Depends(OAuth2PasswordBearer(tokenUrl="token
     sessions = retrieve_sessions(user_id)
     return {"sessions": sessions}
 
-def load_accounts():
-    # Load accounts from a JSON file or other storage
-    # For simplicity, using a hardcoded dictionary here
-    return {
-        "userA": "pass",
-        "userB": "pass",
-        # Add more users as needed
-    }
 
-def save_accounts(accounts):
-    # Save accounts to a JSON file or other storage
-    pass  # Implement saving logic as needed
+def save_accounts(account_dict, file_path='accounts.json'):
+    with open(file_path, 'w') as file:
+        json.dump(account_dict, file, indent=4)
+
+
+def load_accounts(file_path='accounts.json') -> Dict[str, str]:
+    try:
+        with open(file_path, 'r') as file:
+            account_dict = json.load(file)
+    except FileNotFoundError:
+        account_dict = {"userA": "pass",
+                        "userB": "pass"}
+    return account_dict
+
+
+@router.post("/admin_set_accounts")
+async def admin_set_all_accounts(request: Request):
+    form_data = await request.form()
+    accounts = {key: form_data[key] for key in form_data}
+    save_accounts(accounts)
+    return {"status": "success"}
+
 
 # Add the route to issue JWT tokens
 @router.post("/token")
