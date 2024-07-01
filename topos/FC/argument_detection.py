@@ -1,12 +1,16 @@
+# argument_detection.py
+
 import json
 import logging
-
+from collections import defaultdict
 
 from scipy.spatial.distance import pdist, squareform
 from sklearn.cluster import AgglomerativeClustering
 import numpy as np
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
+from nltk.tokenize import sent_tokenize
+from sklearn.metrics.pairwise import cosine_similarity
 
 from topos.FC.cache_manager import CacheManager
 from topos.FC.similitude_module import load_model, util
@@ -61,28 +65,26 @@ class ArgumentDetection:
         word_max_claim = 20
         word_max_counter_claim = 30
 
-        warrant = self.fetch_argument_warrant(cluster_sentences, word_max_warrant, extra_fingerprint)
-        evidence = self.fetch_argument_evidence(cluster_sentences, word_max_evidence, extra_fingerprint)
+        warrant = self.fetch_argument_warrant(cluster_sentences, word_max_warrant, extra_fingerprint, max_retries=50)
+        evidence = self.fetch_argument_evidence(cluster_sentences, word_max_evidence, extra_fingerprint, max_retries=50)
         # @note: this re-rolls because it needs to become quantized - a clipped mean would probably be best here.
         persuasiveness_justification = self.fetch_argument_persuasiveness_justification(cluster_sentences, word_max_persuasiveness_justification, extra_fingerprint, max_retries=50)
-        claim = self.fetch_argument_claim(cluster_sentences, word_max_claim, extra_fingerprint)
-        counterclaim = self.fetch_argument_counter_claim(cluster_sentences, word_max_counter_claim, extra_fingerprint)
+        claim = self.fetch_argument_claim(cluster_sentences, word_max_claim, extra_fingerprint, max_retries=50)
+        counterclaim = self.fetch_argument_counter_claim(cluster_sentences, word_max_counter_claim, extra_fingerprint, max_retries=50)
 
         return warrant.content, evidence.content, persuasiveness_justification.content, claim.content, counterclaim.content
 
-    def fetch_argument_warrant(self, cluster_sentences, word_max, extra_fingerprint=""):
-
+    def fetch_argument_warrant(self, cluster_sentences, word_max, extra_fingerprint="", max_retries=3):
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, identify the underlying reasoning or assumption that connects the evidence to the claim. Provide a concise summary of the warrant only, no preamble. No negative constructions.
+            content_string = f"""           Expected output: {{\"role\": \"warrant\", \"content\": \"_summary of warrant here, {word_max} max words!_\"}} 
+                                            Instructions: Given the following cluster of sentences, [the warrant: identify the underlying reasoning or assumption that connects the evidence to the claim]. In the exact format below, provide a concise summary of the warrant only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
-                                            [your output response-json should be of the form]
-                                            {{\"role\": \"warrant\", \"content\": \"_summary of warrant here, {word_max} max words!_\"}}"""
+                                            """
 
-        # Construct the JSON object using a Python dictionary and convert it to a JSON string
         messages = [
             {
                 "role": "system",
@@ -94,53 +96,87 @@ class ArgumentDetection:
             messages.append({"role": "user",
                              "content": f""" Cluster: 
                                             {cluster_sentences}"""})
-        # default temp is 0.3
         temperature = 0.3
-
-        # Use json.dumps to safely create a JSON string
-        # Attempt to parse the template as JSON
         formatted_json = json.dumps(messages, indent=4)
 
         content_key = self.get_content_key(formatted_json + extra_fingerprint, self.max_tokens_warrant)
 
         cached_response = self.cache_manager.load_from_cache(content_key)
         if cached_response:
-            return cached_response
+            try:
+                found = json.loads(cached_response.content)
+                warrant_len = 1 / len(found['content'])  # this will raise an error if the JSON is invalid
+                return cached_response
+            except json.JSONDecodeError as json_err:
+                logging.warning(f"JSONDecodeError on cached response: {json_err}")
+            except ValueError as value_err:
+                logging.warning(f"ValueError on cached response: {value_err}")
+            except ZeroDivisionError as zero_err:
+                logging.warning(f"ZeroDivisionError on cached response: {zero_err}")
 
-        try:
-            ollama_base = "http://localhost:11434/v1"
-            client = OpenAI(
-                base_url=ollama_base,
-                api_key="ollama",
-            )
+        ollama_base = "http://localhost:11434/v1"
+        client = OpenAI(
+            base_url=ollama_base,
+            api_key="ollama",
+        )
 
-            response = client.chat.completions.create(
-                model=self.model_type,
-                messages=json.loads(formatted_json),
-                max_tokens=self.max_tokens_warrant,
-                n=1,
-                stop=None,
-                temperature=temperature)
-            self.cache_manager.save_to_cache(content_key, response.
-                                             choices[0].message)
-            return response.choices[0].message
-        except Exception as e:
-            logging.error(f"Error in fetch_argument_warrant: {e}")
-            return None
+        cur_message = ""
+        cur_response_content = ""
 
-    def fetch_argument_evidence(self, cluster_sentences, word_max, extra_fingerprint=""):
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=self.model_type,
+                    messages=json.loads(formatted_json),
+                    max_tokens=self.max_tokens_warrant,
+                    n=1,
+                    stop=None,
+                    temperature=temperature)
 
+                response_content = response.choices[0].message
+
+                cur_message = json.loads(formatted_json)
+                cur_response_content = response_content
+
+                found = json.loads(response_content.content)
+                warrant_len = 1 / len(found['content'])
+
+                self.cache_manager.save_to_cache(content_key, response_content)
+                return response_content
+
+            except json.JSONDecodeError as json_err:
+                # print(f"cur_message: {cur_message}")
+                print(f"warrant response: {cur_response_content.content}")
+                logging.warning(f"JSONDecodeError on attempt {attempt + 1}/{max_retries}: {json_err}")
+                continue
+
+            except ValueError as value_err:
+                print(f"warrant response: {cur_response_content.content}")
+                logging.warning(f"ValueError on attempt {attempt + 1}/{max_retries}: {value_err}")
+                continue
+
+            except ZeroDivisionError as zero_err:
+                logging.warning(f"ZeroDivisionError on attempt {attempt + 1}/{max_retries}: {zero_err}")
+                continue
+
+            except Exception as e:
+                logging.error(f"Error in fetch_argument_warrant: {e}")
+                break
+
+        logging.error(f"Failed to fetch valid argument warrant after {max_retries} attempts.")
+        return None
+
+    def fetch_argument_evidence(self, cluster_sentences, word_max, extra_fingerprint="", max_retries=3):
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, identify the pieces of evidence that support the claim. Provide a concise summary of the evidence only, no preamble. No negative constructions.
+            content_string = f"""           Expected output: {{\"role\": \"evidence\", \"content\": \"_summary of evidence here, {word_max} max words!_\"}}
+                                            Given the following cluster of sentences, [the evidence: identify the pieces of evidence that support the claim]. In the exact format below, provide a concise summary of the evidence only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
-                                            [your output response-json should be of the form]
-                                            {{\"role\": \"evidence\", \"content\": \"_summary of evidence here, {word_max} max words!_\"}}"""
+                                            """
 
-        # Construct the JSON object using a Python dictionary and convert it to a JSON string
         messages = [
             {
                 "role": "system",
@@ -152,39 +188,75 @@ class ArgumentDetection:
             messages.append({"role": "user",
                              "content": f""" Cluster: 
                                             {cluster_sentences}"""})
-        # default temp is 0.3
         temperature = 0.3
-
-        # Use json.dumps to safely create a JSON string
-        # Attempt to parse the template as JSON
         formatted_json = json.dumps(messages, indent=4)
 
         content_key = self.get_content_key(formatted_json + extra_fingerprint, self.max_tokens_evidence)
 
         cached_response = self.cache_manager.load_from_cache(content_key)
         if cached_response:
-            return cached_response
+            try:
+                found = json.loads(cached_response.content)
+                evidence_len = 1 / len(found['content'])  # this will raise an error if the JSON is invalid
+                return cached_response
+            except json.JSONDecodeError as json_err:
+                logging.warning(f"JSONDecodeError on cached response: {json_err}")
+            except ValueError as value_err:
+                logging.warning(f"ValueError on cached response: {value_err}")
+            except ZeroDivisionError as zero_err:
+                logging.warning(f"ZeroDivisionError on cached response: {zero_err}")
 
-        try:
-            ollama_base = "http://localhost:11434/v1"
-            client = OpenAI(
-                base_url=ollama_base,
-                api_key="ollama",
-            )
+        ollama_base = "http://localhost:11434/v1"
+        client = OpenAI(
+            base_url=ollama_base,
+            api_key="ollama",
+        )
 
-            response = client.chat.completions.create(
-                model=self.model_type,
-                messages=json.loads(formatted_json),
-                max_tokens=self.max_tokens_evidence,
-                n=1,
-                stop=None,
-                temperature=temperature)
-            self.cache_manager.save_to_cache(content_key, response.
-                                             choices[0].message)
-            return response.choices[0].message
-        except Exception as e:
-            logging.error(f"Error in fetch_argument_warrant: {e}")
-            return None
+        cur_message = ""
+        cur_response_content = ""
+
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=self.model_type,
+                    messages=json.loads(formatted_json),
+                    max_tokens=self.max_tokens_evidence,
+                    n=1,
+                    stop=None,
+                    temperature=temperature)
+
+                response_content = response.choices[0].message
+
+                cur_message = json.loads(formatted_json)
+                cur_response_content = response_content
+
+                found = json.loads(response_content.content)
+                evidence_len = 1 / len(found['content'])
+
+                self.cache_manager.save_to_cache(content_key, response_content)
+                return response_content
+
+            except json.JSONDecodeError as json_err:
+                # print(f"cur_message: {cur_message}")
+                print(f"evidence response: {cur_response_content.content}")
+                logging.warning(f"JSONDecodeError on attempt {attempt + 1}/{max_retries}: {json_err}")
+                continue
+
+            except ValueError as value_err:
+                logging.warning(f"ValueError on attempt {attempt + 1}/{max_retries}: {value_err}")
+                continue
+
+            except ZeroDivisionError as zero_err:
+                logging.warning(f"ZeroDivisionError on attempt {attempt + 1}/{max_retries}: {zero_err}")
+                continue
+
+            except Exception as e:
+                logging.error(f"Error in fetch_argument_evidence: {e}")
+                break
+
+        logging.error(f"Failed to fetch valid argument evidence after {max_retries} attempts.")
+        return None
+
 
     def fetch_argument_persuasiveness_justification(self, cluster_sentences, word_max, extra_fingerprint="",
                                                     max_retries=3):
@@ -196,7 +268,7 @@ class ArgumentDetection:
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
-                                            [your output response-json should be of the form]
+                                            [your output response-json (include braces) should be of the form]
                                             {{\"role\": \"persuasiveness\", \"content\": {{\"persuasiveness_score\": \"_1-10 integer here_\", \"justification\": \"_summary of justification here, {word_max} max words!_\"}}}}"""
 
         messages = [
@@ -264,8 +336,8 @@ class ArgumentDetection:
                 return response_content
 
             except json.JSONDecodeError as json_err:
-                print(f"cur_message: {cur_message}")
-                print(f"response: {cur_response_content.content}")
+                # print(f"cur_message: {cur_message}")
+                print(f"persuasiveness/justification response: {cur_response_content.content}")
                 logging.warning(f"JSONDecodeError on attempt {attempt + 1}/{max_retries}: {json_err}")
                 continue  # Retry on JSON decode error
 
@@ -280,19 +352,17 @@ class ArgumentDetection:
         logging.error(f"Failed to fetch valid argument persuasiveness justification after {max_retries} attempts.")
         return None
 
-    def fetch_argument_claim(self, cluster_sentences, word_max, extra_fingerprint=""):
-
+    def fetch_argument_claim(self, cluster_sentences, word_max, extra_fingerprint="", max_retries=3):
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, identify the main claim or assertion made. Provide a concise summary of the claim only, no preamble. No negative constructions.
+            content_string = f"""           Expected output: {{\"role\": \"claim\", \"content\": \"_summary of claim here, {word_max} max words!_\"}}
+                                            Given the following cluster of sentences, [the claim: identify the main claim or assertion made]. In the exact format below, provide a concise summary of the claim only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
-                                            [your output response-json should be of the form]
-                                            {{\"role\": \"claim\", \"content\": \"_summary of claim here, {word_max} max words!_\"}}"""
+                                            """
 
-        # Construct the JSON object using a Python dictionary and convert it to a JSON string
         messages = [
             {
                 "role": "system",
@@ -304,53 +374,87 @@ class ArgumentDetection:
             messages.append({"role": "user",
                              "content": f""" Cluster: 
                                             {cluster_sentences}"""})
-        # default temp is 0.3
         temperature = 0.3
-
-        # Use json.dumps to safely create a JSON string
-        # Attempt to parse the template as JSON
         formatted_json = json.dumps(messages, indent=4)
 
         content_key = self.get_content_key(formatted_json + extra_fingerprint, self.max_tokens_claim)
 
         cached_response = self.cache_manager.load_from_cache(content_key)
         if cached_response:
-            return cached_response
+            try:
+                found = json.loads(cached_response.content)
+                claim_len = 1 / len(found['content'])  # this will raise an error if the JSON is invalid
+                return cached_response
+            except json.JSONDecodeError as json_err:
+                logging.warning(f"JSONDecodeError on cached response: {json_err}")
+            except ValueError as value_err:
+                logging.warning(f"ValueError on cached response: {value_err}")
+            except ZeroDivisionError as zero_err:
+                logging.warning(f"ZeroDivisionError on cached response: {zero_err}")
 
-        try:
-            ollama_base = "http://localhost:11434/v1"
-            client = OpenAI(
-                base_url=ollama_base,
-                api_key="ollama",
-            )
 
-            response = client.chat.completions.create(
-                model=self.model_type,
-                messages=json.loads(formatted_json),
-                max_tokens=self.max_tokens_claim,
-                n=1,
-                stop=None,
-                temperature=temperature)
-            self.cache_manager.save_to_cache(content_key, response.
-                                             choices[0].message)
-            return response.choices[0].message
-        except Exception as e:
-            logging.error(f"Error in fetch_argument_claim: {e}")
-            return None
+        ollama_base = "http://localhost:11434/v1"
+        client = OpenAI(
+            base_url=ollama_base,
+            api_key="ollama",
+        )
 
-    def fetch_argument_counter_claim(self, cluster_sentences, word_max, extra_fingerprint=""):
+        cur_message = ""
+        cur_response_content = ""
 
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=self.model_type,
+                    messages=json.loads(formatted_json),
+                    max_tokens=self.max_tokens_claim,
+                    n=1,
+                    stop=None,
+                    temperature=temperature)
+
+                response_content = response.choices[0].message
+
+                cur_message = json.loads(formatted_json)
+                cur_response_content = response_content
+
+                found = json.loads(response_content.content)
+                claim_len = 1 / len(found['content'])
+
+                self.cache_manager.save_to_cache(content_key, response_content)
+                return response_content
+
+            except json.JSONDecodeError as json_err:
+                # print(f"cur_message: {cur_message}")
+                print(f"claim response: {cur_response_content.content}")
+                logging.warning(f"JSONDecodeError on attempt {attempt + 1}/{max_retries}: {json_err}")
+                continue
+
+            except ValueError as value_err:
+                logging.warning(f"ValueError on attempt {attempt + 1}/{max_retries}: {value_err}")
+                continue
+
+            except ZeroDivisionError as zero_err:
+                logging.warning(f"ZeroDivisionError on attempt {attempt + 1}/{max_retries}: {zero_err}")
+                continue
+
+            except Exception as e:
+                logging.error(f"Error in fetch_argument_claim: {e}")
+                break
+
+        logging.error(f"Failed to fetch valid argument claim after {max_retries} attempts.")
+        return None
+
+    def fetch_argument_counter_claim(self, cluster_sentences, word_max, extra_fingerprint="", max_retries=3):
         content_string = ""
 
         if self.model_provider == "ollama" and self.model_type == "dolphin-llama3":
-            content_string = f"""Given the following cluster of sentences, identify any counterclaims or opposing arguments presented. Provide a concise summary of the counterclaims only, no preamble. No negative constructions.
+            content_string = f"""           Expected output: {{\"role\": \"counter_claim\", \"content\": \"_summary of counter claim here, {word_max} max words!_\"}}
+                                            Given the following cluster of sentences, [the counterclaim: identify any counterclaims or opposing arguments presented]. In the exact format below, provide a concise summary of the counterclaims only, no preamble. No negative constructions.
                                             [user will enter data like]
                                             Cluster: 
                                             {{cluster_sentences}}
-                                            [your output response-json should be of the form]
-                                            {{\"role\": \"counter_claim\", \"content\": \"_summary of counter claim here, {word_max} max words!_\"}}"""
+                                            """
 
-        # Construct the JSON object using a Python dictionary and convert it to a JSON string
         messages = [
             {
                 "role": "system",
@@ -362,100 +466,176 @@ class ArgumentDetection:
             messages.append({"role": "user",
                              "content": f""" Cluster: 
                                             {cluster_sentences}"""})
-        # default temp is 0.3
         temperature = 0.3
-
-        # Use json.dumps to safely create a JSON string
-        # Attempt to parse the template as JSON
         formatted_json = json.dumps(messages, indent=4)
 
         content_key = self.get_content_key(formatted_json + extra_fingerprint, self.max_tokens_counter_claim)
 
         cached_response = self.cache_manager.load_from_cache(content_key)
         if cached_response:
-            return cached_response
+            try:
+                found = json.loads(cached_response.content)
+                counter_claim_len = 1 / len(found['content'])  # this will raise an error if the JSON is invalid
+                return cached_response
+            except json.JSONDecodeError as json_err:
+                logging.warning(f"JSONDecodeError on cached response: {json_err}")
+            except ValueError as value_err:
+                logging.warning(f"ValueError on cached response: {value_err}")
+            except ZeroDivisionError as zero_err:
+                logging.warning(f"ZeroDivisionError on cached response: {zero_err}")
 
-        try:
-            ollama_base = "http://localhost:11434/v1"
-            client = OpenAI(
-                base_url=ollama_base,
-                api_key="ollama",
-            )
 
-            response = client.chat.completions.create(
-                model=self.model_type,
-                messages=json.loads(formatted_json),
-                max_tokens=self.max_tokens_claim,
-                n=1,
-                stop=None,
-                temperature=temperature)
-            self.cache_manager.save_to_cache(content_key, response.
-                                             choices[0].message)
-            return response.choices[0].message
-        except Exception as e:
-            logging.error(f"Error in fetch_argument_counter_claim: {e}")
-            return None
+        ollama_base = "http://localhost:11434/v1"
+        client = OpenAI(
+            base_url=ollama_base,
+            api_key="ollama",
+        )
+
+        cur_message = ""
+        cur_response_content = ""
+
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(
+                    model=self.model_type,
+                    messages=json.loads(formatted_json),
+                    max_tokens=self.max_tokens_counter_claim,
+                    n=1,
+                    stop=None,
+                    temperature=temperature)
+
+                response_content = response.choices[0].message
+
+                cur_message = json.loads(formatted_json)
+                cur_response_content = response_content
+
+                found = json.loads(response_content.content)
+                counter_claim_len = 1 / len(found['content'])  # this will raise an error if the JSON is invalid
+
+                self.cache_manager.save_to_cache(content_key, response_content)
+                return response_content
+
+            except json.JSONDecodeError as json_err:
+                # print(f"cur_message: {cur_message}")
+                print(f"counterclaim response: {cur_response_content.content}")
+                logging.warning(f"JSONDecodeError on attempt {attempt + 1}/{max_retries}: {json_err}")
+                continue
+
+            except ValueError as value_err:
+                logging.warning(f"ValueError on attempt {attempt + 1}/{max_retries}: {value_err}")
+                continue
+
+            except ZeroDivisionError as zero_err:
+                logging.warning(f"ZeroDivisionError on attempt {attempt + 1}/{max_retries}: {zero_err}")
+                continue
+
+            except Exception as e:
+                logging.error(f"Error in fetch_argument_counter_claim: {e}")
+                break
+
+        logging.error(f"Failed to fetch valid argument counter claim after {max_retries} attempts.")
+        return None
 
     def get_embeddings(self, sentences):
-        print("[INFO] Embedding sentences using SentenceTransformer...")
+        # print("[INFO] Embedding sentences using SentenceTransformer...")
         embeddings = self.model.encode(sentences)
-        print("[INFO] Sentence embeddings obtained.")
+        # print("[INFO] Sentence embeddings obtained.")
         return embeddings
 
-    def calculate_distance_matrix(self, embeddings):
-        print("[INFO] Calculating semantic distance matrix...")
-        # distance_matrix = np.zeros((len(embeddings), len(embeddings)))
-        # for i in range(len(embeddings)):
-        #     for j in range(len(embeddings)):
-        #         if i != j:
-        #             distance_matrix[i][j] = np.linalg.norm(embeddings[i] - embeddings[j])
+    from sklearn.cluster import AgglomerativeClustering
+    from sentence_transformers import SentenceTransformer
+    import numpy as np
 
-        # Use pdist to calculate the condensed distance matrix
-        distance_matrix = pdist(embeddings, metric='euclidean')
-
-        print("[INFO] Distance matrix calculated.")
-        return distance_matrix
-
-    def calculate_distance_matrix_square(self, embeddings):
-        print("[INFO] Calculating semantic distance matrix...")
-        distance_matrix = np.zeros((len(embeddings), len(embeddings)))
-        for i in range(len(embeddings)):
-            for j in range(len(embeddings)):
-                if i != j:
-                    distance_matrix[i][j] = np.linalg.norm(embeddings[i] - embeddings[j])
-
-        print("[INFO] Distance matrix calculated.")
-        return distance_matrix
-
-    def cluster_sentences(self, sentences, distance_threshold=1.5):  # Adjust distance_threshold here
+    def cluster_sentences(self, sentences, distance_threshold=0.5):
+        print("\t\t[ [INFO] Performing hierarchical clustering... ]")
         embeddings = self.get_embeddings(sentences)
-        distance_matrix = self.calculate_distance_matrix_square(embeddings)
-        # distance_matrix = self.calculate_distance_matrix(embeddings)
 
-        # Perform Agglomerative Clustering based on the distance matrix
-        print("[INFO] Performing hierarchical clustering...")
-        clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold,
-                                             metric='euclidean', linkage='average')
-        clusters = clustering.fit_predict(distance_matrix)
+        # Perform Agglomerative Clustering based on cosine similarity
+        clustering = AgglomerativeClustering(n_clusters=None,
+                                             distance_threshold=distance_threshold,
+                                             metric='cosine',
+                                             linkage='average')
+        clusters = clustering.fit_predict(embeddings)
 
-        # @note: @jonny - this might be better - testing
-        # clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold,
-        #                                      metric='precomputed', linkage='average')
-        # Convert condensed distance matrix back to a full square form for clustering
-        # full_distance_matrix = squareform(distance_matrix)
-        # clusters = clustering.fit_predict(full_distance_matrix)
-
-        print("[INFO] Clustering complete. Clusters assigned:")
+        print("\t\t[ [INFO] Clustering complete. Clusters assigned ]")
         for i, cluster in enumerate(clusters):
-            print(f"Sentence {i + 1} is in cluster {cluster}")
+            print(f"\t\t\t[ Sentence {i + 1} is in cluster {cluster} ]")
 
         cluster_dict = {}
+        coherence_scores = {}
         for i, cluster in enumerate(clusters):
             if cluster not in cluster_dict:
                 cluster_dict[cluster] = []
             cluster_dict[cluster].append(sentences[i])
 
-        return cluster_dict
+        # Calculate coherence for each cluster
+        for cluster, cluster_sentences in cluster_dict.items():
+            cluster_embeddings = self.get_embeddings(cluster_sentences)
+            coherence = self.calculate_coherence(cluster_embeddings)
+            coherence_scores[cluster] = float(coherence)
+            # print(f"\t\t\t[ Cluster {cluster} coherence: {coherence:.4f} ]")
+
+        return cluster_dict, coherence_scores
+
+    @staticmethod
+    def calculate_coherence(embeddings):
+        similarity_matrix = cosine_similarity(embeddings)
+        return np.mean(similarity_matrix)
+
+    # def calculate_distance_matrix(self, embeddings):
+    #     print("[INFO] Calculating semantic distance matrix...")
+    #     # distance_matrix = np.zeros((len(embeddings), len(embeddings)))
+    #     # for i in range(len(embeddings)):
+    #     #     for j in range(len(embeddings)):
+    #     #         if i != j:
+    #     #             distance_matrix[i][j] = np.linalg.norm(embeddings[i] - embeddings[j])
+    #
+    #     # Use pdist to calculate the condensed distance matrix
+    #     distance_matrix = pdist(embeddings, metric='euclidean')
+    #
+    #     print("[INFO] Distance matrix calculated.")
+    #     return distance_matrix
+    #
+    # def calculate_distance_matrix_square(self, embeddings):
+    #     print("\t\t\t[ [INFO] Calculating semantic distance matrix... ]")
+    #     distance_matrix = np.zeros((len(embeddings), len(embeddings)))
+    #     for i in range(len(embeddings)):
+    #         for j in range(len(embeddings)):
+    #             if i != j:
+    #                 distance_matrix[i][j] = np.linalg.norm(embeddings[i] - embeddings[j])
+    #
+    #     print("\t\t\t[ [INFO] Distance matrix calculated. ]")
+    #     return distance_matrix
+    #
+    # def cluster_sentences(self, sentences, distance_threshold=1.5):  # Adjust distance_threshold here
+    #     print("\t\t[ [INFO] Performing hierarchical clustering... ]")
+    #     embeddings = self.get_embeddings(sentences)
+    #     distance_matrix = self.calculate_distance_matrix_square(embeddings)
+    #     # distance_matrix = self.calculate_distance_matrix(embeddings)
+    #
+    #     # Perform Agglomerative Clustering based on the distance matrix
+    #     clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold,
+    #                                          metric='euclidean', linkage='average')
+    #     clusters = clustering.fit_predict(distance_matrix)
+    #
+    #     # @note: @jonny - this might be better - testing
+    #     # clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=distance_threshold,
+    #     #                                      metric='precomputed', linkage='average')
+    #     # Convert condensed distance matrix back to a full square form for clustering
+    #     # full_distance_matrix = squareform(distance_matrix)
+    #     # clusters = clustering.fit_predict(full_distance_matrix)
+    #
+    #     print("\t\t[ [INFO] Clustering complete. Clusters assigned ]")
+    #     for i, cluster in enumerate(clusters):
+    #         print(f"\t\t\t[ Sentence {i + 1} is in cluster {cluster} ]")
+    #
+    #     cluster_dict = {}
+    #     for i, cluster in enumerate(clusters):
+    #         if cluster not in cluster_dict:
+    #             cluster_dict[cluster] = []
+    #         cluster_dict[cluster].append(sentences[i])
+    #
+    #     return cluster_dict
 
     def run_tests(self):
         examples = {

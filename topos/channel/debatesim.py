@@ -25,6 +25,7 @@ from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
 import torch
 from sklearn.metrics.pairwise import cosine_similarity
+from nltk.tokenize import sent_tokenize
 import numpy as np
 from scipy.stats import entropy
 
@@ -88,13 +89,15 @@ from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
 
 
 class Cluster:
-    def __init__(self, cluster_id, sentences, user_id, generation, session_id):
+    def __init__(self, cluster_id, sentences, user_id, generation, session_id, coherence):
         self.cluster_id = cluster_id
         self.sentences = sentences
         self.cluster_hash = self.generate_hash()
         self.user_id = user_id
         self.generation = generation
         self.session_id = session_id
+        self.coherence = coherence
+        self.wepcc_result = None
 
     def generate_hash(self):
         sorted_sentences = sorted(self.sentences)
@@ -107,8 +110,14 @@ class Cluster:
             "cluster_hash": self.cluster_hash,
             "user_id": self.user_id,
             "generation": self.generation,
-            "session_id": self.session_id
+            "session_id": self.session_id,
+            "coherence": self.coherence,
+            "wepcc_result": self.wepcc_result,
         }
+
+    def update_wepcc(self, wepcc_result):
+        self.wepcc_result = wepcc_result
+
 
 
 class DebateSimulator:
@@ -253,6 +262,7 @@ class DebateSimulator:
                     self.task_queue.task_done()
             except asyncio.CancelledError:
                 print("Task processing was cancelled")
+                # traceback.print_exc()
                 break
             except Exception as e:
                 print(f"Error processing task: {e}")
@@ -334,14 +344,14 @@ class DebateSimulator:
         current_ontology = await self.get_ontology(user_id, session_id, message_id, message)
 
         # print(f"[ prior_ontology: {prior_ontology} ]")
-        print(f"[ current_ontology: {current_ontology} ]")
+        # print(f"[ current_ontology: {current_ontology} ]")
 
         prior_ontology.append(current_ontology)
 
         app_state.set_state(f"prior_ontology_{session_id}", prior_ontology)
 
         mermaid_to_ascii = self.ontological_feature_detection.mermaid_to_ascii(current_ontology)
-        print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
+        # print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
 
         new_history_item = {
             "data": {
@@ -383,6 +393,35 @@ class DebateSimulator:
     @staticmethod
     def generate_nonce():
         return str(uuid4())
+
+    @staticmethod
+    def break_into_sentences(messages, min_words=20):
+        output = []
+        for message in messages:
+            content = message["data"]["content"].strip()  # Remove leading/trailing whitespace
+            sentences = sent_tokenize(content)
+
+            current_sentence = []
+
+            for sentence in sentences:
+                sentence = sentence.strip()  # Remove leading/trailing whitespace
+                if not sentence:
+                    continue  # Skip empty sentences
+
+                words = sentence.split()
+                if len(current_sentence) + len(words) >= min_words:
+                    current_sentence.extend(words)  # Extend current sentence before appending
+                    output.append({"role": message["role"], "data": {"user_id": message["data"]["user_id"],
+                                                                     "content": " ".join(current_sentence)}})
+                    current_sentence = []  # Reset current_sentence after appending
+                else:
+                    current_sentence.extend(words)
+
+            if current_sentence:
+                output.append({"role": message["role"],
+                               "data": {"user_id": message["data"]["user_id"], "content": " ".join(current_sentence)}})
+
+        return output
 
     @staticmethod
     def aggregate_user_messages(message_history: List[Dict]) -> Dict[str, List[str]]:
@@ -448,11 +487,11 @@ class DebateSimulator:
 
         # Step 1: Gather message history for specific users
         user_messages = self.aggregate_user_messages(message_history)
-        print(f"\t[ reflect :: user_messages :: {user_messages} ]")
+        # print(f"\t[ reflect :: user_messages :: {user_messages} ]")
 
         # Step 2: Cluster analysis for each user's messages
         clusters = self.cluster_messages(user_messages, generation_nonce, session_id)
-        print(f"\t[ reflect :: clustered_messages :: {clusters} ]")
+        # print(f"\t[ reflect :: clustered_messages :: {len(clusters)} ]")
 
         # Send initial cluster data back to frontend
         await self.broadcast_to_websocket_group(session_id, {
@@ -466,8 +505,15 @@ class DebateSimulator:
 
         # Perform incremental clustering if needed
         previous_clusters = app_state.get_value(f"previous_clusters_{session_id}_{user_id}", {})
+
+        # Extract properly ID-matching clusters from previous_clusters
+        for user_id, user_clusters in clusters.items():
+            if user_id in previous_clusters:
+                for cluster_id, cluster in user_clusters.items():
+                    if cluster_id in previous_clusters[user_id]:
+                        cluster.update_wepcc(previous_clusters[user_id][cluster_id].wepcc_result)
+
         updated_clusters = self.incremental_clustering(clusters, previous_clusters)
-        app_state.set_value(f"previous_clusters_{session_id}_{user_id}", clusters)
 
         # Send updated cluster data back to frontend
         await self.broadcast_to_websocket_group(session_id, {
@@ -495,7 +541,16 @@ class DebateSimulator:
         # these each take a bit to process, so we're passing in the websocket group to stream the results back out
         # due to timing these may be inconsequential re: generation, but they're going to send back the results anyhow.
         wepcc_results = await self.wepcc_cluster(updated_clusters, report_wepcc_result)
-        print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
+        # print(f"\t[ reflect :: wepcc_results :: {wepcc_results} ]")
+
+        # Update clusters with WEPCC results
+        for user_id, user_clusters in updated_clusters.items():
+            for cluster_id, cluster in user_clusters.items():
+                if cluster_id in wepcc_results[user_id]:
+                    wepcc = wepcc_results[user_id][cluster_id]
+                    cluster.update_wepcc(wepcc)
+
+        app_state.set_value(f"previous_clusters_{session_id}_{user_id}", clusters)
 
         # Check if there are enough clusters or users to perform argument matching
         if len(clusters) < 2:
@@ -509,7 +564,7 @@ class DebateSimulator:
 
             # Call gather_final_results
             aggregated_scores, addressed_clusters, unaddressed_clusters, results = self.gather_final_results(
-                cluster_shadow_coverage, wepcc_results, unaddressed_score_multiplier
+                cluster_shadow_coverage, clusters, unaddressed_score_multiplier
             )
 
             await self.broadcast_to_websocket_group(session_id, {
@@ -533,7 +588,7 @@ class DebateSimulator:
         # Step 4: Match each user's Counterclaims with all other users' Claims
         # This function takes a moment, as it does an embedding check. Not super heavy, but with enough participants
         # certainly an async operation
-        cluster_weight_modulator = self.get_cluster_weight_modulator(wepcc_results, cutoff)
+        cluster_weight_modulator = self.get_cluster_weight_modulator(clusters, cutoff)
 
         # Step 5: Calculate the counter-factual shadow coverage for each cluster
         # Create a new dictionary to hold the final combined scores
@@ -544,7 +599,7 @@ class DebateSimulator:
         (aggregated_scores,
          addressed_clusters,
          unaddressed_clusters,
-         results) = self.gather_final_results(cluster_shadow_coverage, wepcc_results, unaddressed_score_multiplier)
+         results) = self.gather_final_results(cluster_shadow_coverage, clusters, unaddressed_score_multiplier)
 
         print(f"\t[ reflect :: aggregated_scores :: {aggregated_scores} ]")
         print(f"\t[ reflect :: addressed_clusters :: {addressed_clusters} ]")
@@ -570,18 +625,26 @@ class DebateSimulator:
         clustered_messages = {}
         for user_id, messages in user_messages.items():
             if len(messages) > 1:
-                clusters = self.argument_detection.cluster_sentences(messages, distance_threshold=1.45)
+                clusters, coherence_scores = self.argument_detection.cluster_sentences(messages, distance_threshold=0.3)
                 clustered_messages[user_id] = {
-                    int(cluster_id): Cluster(cluster_id=int(cluster_id), sentences=cluster_sentences, user_id=user_id,
-                                             generation=generation, session_id=session_id)
+                    int(cluster_id): Cluster(cluster_id=int(cluster_id),
+                                             sentences=cluster_sentences,
+                                             user_id=user_id,
+                                             generation=generation,
+                                             session_id=session_id,
+                                             coherence=coherence_scores.get(cluster_id, 1.0))
                     for cluster_id, cluster_sentences in clusters.items()
                 }
             elif len(messages) == 1:
                 # Create a single cluster for the lone message
                 cluster_id = 0
                 clustered_messages[user_id] = {
-                    cluster_id: Cluster(cluster_id=cluster_id, sentences=messages, user_id=user_id,
-                                        generation=generation, session_id=session_id)
+                    cluster_id: Cluster(cluster_id=cluster_id,
+                                        sentences=messages,
+                                        user_id=user_id,
+                                        generation=generation,
+                                        session_id=session_id,
+                                        coherence=1.0)  # Single message cluster always has perfect coherence
                 }
         return clustered_messages
 
@@ -590,7 +653,7 @@ class DebateSimulator:
         for user_id, user_clusters in clusters.items():
             wepcc_results[user_id] = {}
             for cluster_id, cluster in user_clusters.items():
-                print(f"\t[ reflect :: Running WEPCC for user {user_id}, cluster {cluster_id} ]")
+                # print(f"\t[ reflect :: Running WEPCC for user {user_id}, cluster {cluster_id} ]")
                 warrant, evidence, persuasiveness_justification, claim, counterclaim = self.argument_detection.fetch_argument_definition(
                     cluster.sentences)
                 wepcc_results[user_id][cluster_id] = {
@@ -600,28 +663,34 @@ class DebateSimulator:
                     'claim': claim,
                     'counterclaim': counterclaim
                 }
-                self.pretty_print_wepcc_result(user_id, cluster_id, wepcc_results[user_id][cluster_id])
+                # self.pretty_print_wepcc_result(user_id, cluster_id, wepcc_results[user_id][cluster_id])
                 # print(
                 #     f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
 
                 # Output to websocket
                 await report_wepcc_result(cluster.cluster_hash, user_id, cluster_id, cluster.cluster_hash,
-                                    wepcc_results[user_id][cluster_id])
+                                          wepcc_results[user_id][cluster_id])
         return wepcc_results
 
-    def get_cluster_weight_modulator(self, wepcc_results, cutoff):
+    def get_cluster_weight_modulator(self, clusters, cutoff):
         cluster_weight_modulator = {}
-        for user_idA, clustersA in wepcc_results.items():
+        for user_idA, user_clustersA in clusters.items():
             cluster_weight_modulator[user_idA] = cluster_weight_modulator.get(user_idA, {})
 
-            for cluster_idA, wepccA in clustersA.items():
+            for cluster_idA, clusterA in user_clustersA.items():
                 phase_sim_A = []
-                for user_idB, clustersB in wepcc_results.items():
+                wepcc_cluster_a = clusterA.wepcc_result
+                counterclaim_a = json.loads(wepcc_cluster_a['counterclaim'])
+                counterclaim_embedding = self.fast_embedding_model.encode(counterclaim_a['content'])
+
+                for user_idB, user_clustersB in clusters.items():
                     if user_idA != user_idB:
-                        for cluster_idB, wepccB in clustersB.items():
+                        for cluster_idB, clusterB in user_clustersB.items():
+                            wepcc_cluster_b = clusterB.wepcc_result
+                            claim_b = json.loads(wepcc_cluster_b['claim'])
+
                             # Calculate cosine similarity between counterclaims and claims
-                            counterclaim_embedding = self.fast_embedding_model.encode(wepccA['counterclaim'])
-                            claim_embedding = self.fast_embedding_model.encode(wepccB['claim'])
+                            claim_embedding = self.fast_embedding_model.encode(claim_b['content'])
                             sim_score = cosine_similarity([counterclaim_embedding], [claim_embedding])[0][0]
                             print(
                                 f"\t[ reflect :: Sim score between {user_idA}'s counterclaim (cluster {cluster_idA}) and {user_idB}'s claim (cluster {cluster_idB}) :: {sim_score} ]")
@@ -636,7 +705,7 @@ class DebateSimulator:
                         f"\t[ reflect :: Normalized value for {user_idA} (cluster {cluster_idA}) :: {normalized_value} ]")
         return cluster_weight_modulator
 
-    def gather_final_results(self, cluster_shadow_coverage, wepcc_results, unaddressed_score_multiplier):
+    def gather_final_results(self, cluster_shadow_coverage, clusters, unaddressed_score_multiplier):
         aggregated_scores = {}
         addressed_clusters = {}
         unaddressed_clusters = {}
@@ -652,9 +721,11 @@ class DebateSimulator:
 
             for cluster_id, modulator in weight_mods.items():
                 try:
-                    persuasiveness_object = json.loads(
-                        wepcc_results[user_id][cluster_id]['persuasiveness_justification'])
-                    persuasiveness_score = float(persuasiveness_object['content']['persuasiveness_score'])
+                    cluster = clusters[user_id][cluster_id]
+                    persuasiveness_score = float(
+                        json.loads(cluster.wepcc_result['persuasiveness_justification'])['content'][
+                            'persuasiveness_score'])
+
                     addressed_score = (1 - modulator) * persuasiveness_score
                     total_score += addressed_score
                     addressed_clusters[user_id].append((cluster_id, addressed_score))
@@ -665,17 +736,17 @@ class DebateSimulator:
                     })
                     print(
                         f"\t[ reflect :: Addressed score for User {user_id}, Cluster {cluster_id} :: {addressed_score} ]")
-                except json.JSONDecodeError as e:
-                    print(f"\t[ reflect :: JSONDecodeError for User {user_id}, Cluster {cluster_id} :: {e} ]")
-                    print(
-                        f"\t[ reflect :: Invalid JSON :: {wepcc_results[user_id][cluster_id]['persuasiveness_justification']} ]")
+                except (json.JSONDecodeError, KeyError) as e:
+                    print(f"\t[ reflect :: Error for User {user_id}, Cluster {cluster_id} :: {e} ]")
 
             # Add unaddressed arguments' scores
-            for cluster_id, wepcc in wepcc_results[user_id].items():
+            for cluster_id, cluster in clusters[user_id].items():
                 if cluster_id not in weight_mods:
                     try:
-                        persuasiveness_object = json.loads(wepcc['persuasiveness_justification'])
-                        persuasiveness_score = float(persuasiveness_object['content']['persuasiveness_score'])
+                        persuasiveness_score = float(
+                            json.loads(cluster.wepcc_result['persuasiveness_justification'])
+                            ['content']['persuasiveness_score'])
+
                         unaddressed_score = persuasiveness_score * unaddressed_score_multiplier
                         total_score += unaddressed_score
                         unaddressed_clusters[user_id].append((cluster_id, unaddressed_score))
@@ -686,48 +757,47 @@ class DebateSimulator:
                         })
                         print(
                             f"\t[ reflect :: Unaddressed score for User {user_id}, Cluster {cluster_id} :: {unaddressed_score} ]")
-                    except json.JSONDecodeError as e:
-                        print(f"\t[ reflect :: JSONDecodeError for User {user_id}, Cluster {cluster_id} :: {e} ]")
-                        print(f"\t[ reflect :: Invalid JSON :: {wepcc['persuasiveness_justification']} ]")
+                    except (json.JSONDecodeError, KeyError) as e:
+                        print(f"\t[ reflect :: Error for User {user_id}, Cluster {cluster_id} :: {e} ]")
 
             aggregated_scores[user_id] = total_score
             user_result["total_score"] = total_score
             results.append(user_result)
             print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
 
-            # Process remaining clusters without shadow coverage
-            for user_id, user_clusters in wepcc_results.items():
-                if user_id not in aggregated_scores:
-                    total_score = 0
-                    addressed_clusters[user_id] = []
-                    unaddressed_clusters[user_id] = []
+        # Process remaining clusters without shadow coverage
+        for user_id, user_clusters in clusters.items():
+            if user_id not in aggregated_scores:
+                total_score = 0
+                addressed_clusters[user_id] = []
+                unaddressed_clusters[user_id] = []
 
-                    user_result = {"user": user_id, "clusters": []}
+                user_result = {"user": user_id, "clusters": []}
 
-                    for cluster_id, wepcc in user_clusters.items():
-                        if cluster_id not in cluster_shadow_coverage.get(user_id, {}):
-                            try:
-                                persuasiveness_object = json.loads(wepcc['persuasiveness_justification'])
-                                persuasiveness_score = float(persuasiveness_object['content']['persuasiveness_score'])
-                                unaddressed_score = persuasiveness_score * unaddressed_score_multiplier
-                                total_score += unaddressed_score
-                                unaddressed_clusters[user_id].append((cluster_id, unaddressed_score))
-                                user_result["clusters"].append({
-                                    "cluster": cluster_id,
-                                    "type": "unaddressed",
-                                    "score": unaddressed_score
-                                })
-                                print(
-                                    f"\t[ reflect :: Unaddressed score for User {user_id}, Cluster {cluster_id} :: {unaddressed_score} ]")
-                            except json.JSONDecodeError as e:
-                                print(
-                                    f"\t[ reflect :: JSONDecodeError for User {user_id}, Cluster {cluster_id} :: {e} ]")
-                                print(f"\t[ reflect :: Invalid JSON :: {wepcc['persuasiveness_justification']} ]")
+                for cluster_id, cluster in user_clusters.items():
+                    if cluster_id not in cluster_shadow_coverage.get(user_id, {}):
+                        try:
+                            persuasiveness_score = float(
+                                json.loads(cluster.wepcc_result['persuasiveness_justification'])['content'][
+                                    'persuasiveness_score'])
 
-                    aggregated_scores[user_id] = total_score
-                    user_result["total_score"] = total_score
-                    results.append(user_result)
-                    print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
+                            unaddressed_score = persuasiveness_score * unaddressed_score_multiplier
+                            total_score += unaddressed_score
+                            unaddressed_clusters[user_id].append((cluster_id, unaddressed_score))
+                            user_result["clusters"].append({
+                                "cluster": cluster_id,
+                                "type": "unaddressed",
+                                "score": unaddressed_score
+                            })
+                            print(
+                                f"\t[ reflect :: Unaddressed score for User {user_id}, Cluster {cluster_id} :: {unaddressed_score} ]")
+                        except (json.JSONDecodeError, KeyError) as e:
+                            print(f"\t[ reflect :: Error for User {user_id}, Cluster {cluster_id} :: {e} ]")
+
+                aggregated_scores[user_id] = total_score
+                user_result["total_score"] = total_score
+                results.append(user_result)
+                print(f"\t[ reflect :: Aggregated score for User {user_id} :: {total_score} ]")
 
         return aggregated_scores, addressed_clusters, unaddressed_clusters, results
 
@@ -760,4 +830,4 @@ class DebateSimulator:
 
     def pretty_print_wepcc_result(self, user_id, cluster_id, wepcc_result):
         pp = pprint.PrettyPrinter(indent=4)
-        print(f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} ]")
+        pp.pprint(f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_result} ]")

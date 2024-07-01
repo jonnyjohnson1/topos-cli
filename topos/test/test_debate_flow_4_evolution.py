@@ -1,4 +1,4 @@
-# test_debate_flow_jwt_token.py
+# test_debate_flow_4_evolution.py
 
 import os
 import unittest
@@ -83,16 +83,16 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
     def test_debate_flow_with_jwt(self):
         client = TestClient(app)
 
-        response = client.post("/admin_set_accounts", data={"userA": "pass", "userB": "pass"})
+        response = client.post("/admin_set_accounts", data={"Evolutionist": "pass", "Creationist": "pass"})
         self.assertEqual(response.status_code, 200)
 
         # Create tokens for two users
-        response = client.post("/token", data={"username": "userA", "password": "pass"})
+        response = client.post("/token", data={"username": "Evolutionist", "password": "pass"})
         self.assertEqual(response.status_code, 200)
         token_user_a = response.json().get("access_token")
         self.assertIsNotNone(token_user_a)
 
-        response = client.post("/token", data={"username": "userB", "password": "pass"})
+        response = client.post("/token", data={"username": "Creationist", "password": "pass"})
         self.assertEqual(response.status_code, 200)
         token_user_b = response.json().get("access_token")
         self.assertIsNotNone(token_user_b)
@@ -111,11 +111,17 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
             session_id = sessions[0]
 
         message_data = [
-            {"role": "user", "data": {"user_id": "userA", "content": "Human activity impacts climate change."}},
-            {"role": "user", "data": {"user_id": "userB", "content": "Natural cycles cause climate change."}},
-            {"role": "user", "data": {"user_id": "userA", "content": "Dinosaurs didn't cause the world to warm up."}},
-            {"role": "user", "data": {"user_id": "userB", "content": "Asteroids are random and aren't the point."}}
-        ]
+                        {"role": "user", "data": {"user_id": "Evolutionist", "content": "The theory of evolution is supported by extensive scientific evidence. Fossil records provide clear evidence of species changing over time."}},
+                        {"role": "user", "data": {"user_id": "Creationist", "content": "Evolution is just a theory, not a proven fact. The fossil record is incomplete and doesn't show transitional forms."}},
+                        {"role": "user", "data": {"user_id": "Evolutionist", "content": "Genetic studies confirm common ancestry between species. Natural selection has been observed in real-time, such as with antibiotic resistance in bacteria."}},
+                        {"role": "user", "data": {"user_id": "Creationist", "content": "Genetic similarities could be due to a common designer, not common ancestry. Microevolution within species occurs, but not macroevolution between species."}},
+                        {"role": "user", "data": {"user_id": "Evolutionist", "content": "The age of the Earth, approximately 4.5 billion years, provides ample time for evolution to occur. Comparative anatomy shows homologous structures across species, indicating shared ancestry."}},
+                        {"role": "user", "data": {"user_id": "Creationist", "content": "The Earth is much younger, only thousands of years old, not billions. Similar structures could be evidence of a common design plan, not evolution."}},
+                        {"role": "user", "data": {"user_id": "Evolutionist", "content": "Biogeography supports evolution, with species distribution matching continental drift patterns. Vestigial organs in various species point to evolutionary history."}},
+                        {"role": "user", "data": {"user_id": "Creationist", "content": "Species distribution could be explained by migration after a global flood event. So-called vestigial organs often have functions we haven't discovered yet."}},
+                        {"role": "user", "data": {"user_id": "Evolutionist", "content": "The scientific community overwhelmingly accepts evolution as the best explanation for biodiversity. Evolutionary theory has predictive power, such as in discovering Tiktaalik, a transitional fossil."}},
+                        {"role": "user", "data": {"user_id": "Creationist", "content": "Many scientists disagree with evolution, showing it's not a settled matter. Creation science also makes predictions, like the discovery of soft tissue in dinosaur fossils."}},
+                        ]
 
         unique_users = set(message["data"]["user_id"] for message in message_data)
         user_a_name, user_b_name = list(unique_users)

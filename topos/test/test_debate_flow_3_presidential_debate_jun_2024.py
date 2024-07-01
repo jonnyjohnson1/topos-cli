@@ -1,6 +1,5 @@
-# test_debate_flow_3.py
+# test_debate_flow_3_presidential_debate_jun_2024.py
 
-import re
 import os
 import unittest
 from uuid import uuid4
@@ -81,30 +80,6 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
         except InvalidTokenError:
             self.fail("JWT token validation failed")
 
-    def break_into_sentences(self, messages, min_words=20):
-        output = []
-        for message in messages:
-            content = message["data"]["content"]
-            sentences = re.split(r'[.!?]+', content)
-            sentences = [s.strip() for s in sentences if s.strip()]
-
-            current_sentence = []
-
-            for sentence in sentences:
-                words = sentence.split()
-                if len(current_sentence) + len(words) >= min_words:
-                    output.append({"role": message["role"], "data": {"user_id": message["data"]["user_id"],
-                                                                     "content": " ".join(current_sentence)}})
-                    current_sentence = words
-                else:
-                    current_sentence.extend(words)
-
-            if current_sentence:
-                output.append({"role": message["role"],
-                               "data": {"user_id": message["data"]["user_id"], "content": " ".join(current_sentence)}})
-
-        return output
-
     def test_debate_flow_with_jwt(self):
         client = TestClient(app)
 
@@ -163,7 +138,7 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
         unique_users = set(message["data"]["user_id"] for message in message_data)
         user_a_name, user_b_name = list(unique_users)
 
-        message_data = self.break_into_sentences(message_data)
+        message_data = self.debate_simulator.break_into_sentences(message_data)
 
         # Open WebSocket connections for both users
         with client.websocket_connect(f"/ws?token={token_user_a}&session_id={session_id}") as websocket_a, \
@@ -199,7 +174,7 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
                     else:
                         response = websocket_b.receive_json()
 
-                    print(f"\t\t[ Received response: {response} ]")
+                    # print(f"\t\t[ Received response: {response} ]")
 
                     if response["status"] == "message_processed":
                         self.assertIn("initial_analysis", response)

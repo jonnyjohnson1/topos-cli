@@ -167,7 +167,7 @@ class OntologicalFeatureDetection:
                 if entity != subject:
                     relations.append((entity, relation_type, subject))
 
-        print(f"\t[ Relation extraction results: {relations} :: {entities} ]")
+        # print(f"\t[ Relation extraction results: {relations} :: {entities} ]")
 
         return relations, list(entities)
 
@@ -255,7 +255,7 @@ class OntologicalFeatureDetection:
         # print(f"Relationship created: ({entity1})-[:{relation}]->({entity2}) at {timestamp}")
 
     def build_ontology_from_paragraph(self, user_id, session_id, message_id, text):
-        print(f"Processing text for ontology: {text}")
+        # print(f"Processing text for ontology: {text}")
         entities = self.perform_ner(text)
         pos_tags = self.perform_pos_tagging(text)
         dependencies = self.perform_dependency_parsing(text)

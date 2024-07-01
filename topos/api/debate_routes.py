@@ -148,7 +148,7 @@ async def websocket_endpoint(websocket: WebSocket, token: Union[str, None] = Que
             user_name = data.get("user_name", "user")
             role = data.get("role", "user")
 
-            print(f"Received message: {message}")
+            # print(f"Received message: {message}")
 
             # Set default debate values to calculate
             default_config = {

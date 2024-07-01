@@ -99,3 +99,4 @@ ipython_config.py
 /_cache
 /.env
 .DS_Store
+/topos/test/accounts.json
