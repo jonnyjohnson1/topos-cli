@@ -4,7 +4,7 @@ import argparse
 
 def main():
     parser = argparse.ArgumentParser(description="CLI for my script")
-    parser.add_argument('command', choices=['run', 'set'], help="Command to execute")
+    parser.add_argument('command', choices=['run', 'set', 'chat'], help="Command to execute")
     parser.add_argument('--web', action='store_true', help="Flag to run the server for web access")
     parser.add_argument('--local', action='store_true', help="Flag to run the server for local access (default)")
     parser.add_argument('--spacy', choices=['small', 'med', 'large', 'trf'], help="Specify Spacy model size (only for 'set' command)")
@@ -21,6 +21,14 @@ def main():
             api.start_web_api()
         else:
             api.start_local_api()
+    
+    if args.command == 'chat':
+        """
+        start the topos api chat server for clients to connect
+        """
+        # import chat_api
+        from .chat_api import api
+        api.start_chat()
     
     elif args.command == 'set':
         """

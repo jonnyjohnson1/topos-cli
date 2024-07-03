@@ -1,3 +1,4 @@
+import random
 # utils.py
 import os
 
@@ -46,3 +47,6 @@ def is_connected(host="8.8.8.8", port=53, timeout=3):
         return True
     except socket.error as ex:
         return False
+
+def generate_hex_code(n_digits):
+    return ''.join(random.choice('0123456789ABCDEF') for _ in range(n_digits))

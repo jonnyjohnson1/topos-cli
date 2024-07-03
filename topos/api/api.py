@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from ..config import setup_config, get_ssl_certificates
 from .websocket_handlers import router as websocket_router
 from .api_routes import router as api_router
+from .p2p_chat_routes import router as p2p_chat_router
 from .debate_routes import router as debate_router
 import uvicorn
 
@@ -15,6 +16,7 @@ setup_config(app)
 app.include_router(api_router)
 app.include_router(debate_router)
 app.include_router(websocket_router)
+app.include_router(p2p_chat_router)
 
 """
 
