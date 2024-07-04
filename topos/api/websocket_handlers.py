@@ -19,7 +19,7 @@ from topos.channel.debatesim import DebateSimulator
 
 
 router = APIRouter()
-debate_simulator = DebateSimulator()
+debate_simulator = DebateSimulator.get_instance()
 
 
 @router.websocket("/websocket_chat")
