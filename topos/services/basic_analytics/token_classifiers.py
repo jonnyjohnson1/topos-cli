@@ -7,7 +7,7 @@ import yaml
 from topos.utilities.utils import get_root_directory
 
 # Assuming the config.yaml is in ./topos/ relative to setup.py directory
-config_path = os.path.join(get_root_directory(), 'topos', 'config.yaml')
+config_path = os.path.join(get_root_directory(), 'config.yaml')
 
 with open(config_path, 'r') as file:
     settings = yaml.safe_load(file)

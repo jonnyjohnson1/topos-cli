@@ -3,25 +3,19 @@ import random
 import os
 
 def get_root_directory():
-    def find_setup_py_upwards(start_path):
-        current_path = start_path
-        while True:
-            if 'setup.py' in os.listdir(current_path):
-                return current_path
-            parent_path = os.path.abspath(os.path.join(current_path, os.pardir))
-            if parent_path == current_path:  # Reached the root directory
-                return None
-            current_path = parent_path
-
-    # Starting from the current directory
-    current_directory = os.path.abspath('.')
-    setup_py_dir = find_setup_py_upwards(current_directory)
-
-    if setup_py_dir is None:
-        raise FileNotFoundError("setup.py not found in the directory tree.")
-
-    return setup_py_dir
-
+    # Get the current file's directory
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    
+    # Find the first occurrence of "monster" from the right
+    monster_index = current_file_directory.rfind("topos")
+    
+    if monster_index != -1:
+        # Get the path up to the first "monster" directory
+        base_monster_directory = current_file_directory[:monster_index + len("topos")]
+        return base_monster_directory
+    else:
+        raise ValueError("The 'topos' directory was not found in the path.")
+    
 def parse_json(data):
     import json
     return json.loads(data)
