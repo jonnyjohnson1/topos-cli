@@ -28,3 +28,6 @@ def is_connected(host="8.8.8.8", port=53, timeout=3):
 
 def generate_hex_code(n_digits):
     return ''.join(random.choice('0123456789ABCDEF') for _ in range(n_digits))
+
+def generate_deci_code(n_digits):
+    return ''.join(random.choice('0123456789') for _ in range(n_digits))

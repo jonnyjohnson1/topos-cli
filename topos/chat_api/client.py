@@ -3,7 +3,7 @@ import threading
 import websockets
 
 HOST = "127.0.0.1"
-PORT = 13349
+PORT = 13394
 
 def listen_for_messages_from_server(websocket):
     async def listen():

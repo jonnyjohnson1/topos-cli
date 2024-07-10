@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Tuple
@@ -6,9 +7,17 @@ import uvicorn
 import json
 import asyncio
 import datetime
-from ..utilities.utils import generate_hex_code
+from ..utilities.utils import generate_deci_code
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change this to the specific origins you want to allow
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class SessionManager:
     def __init__(self):
@@ -32,7 +41,7 @@ class SessionManager:
         self.user_sessions[user_id] = session_id
 
 session_manager = SessionManager()
-executor = ThreadPoolExecutor(max_workers=6)
+# executor = ThreadPoolExecutor(max_workers=6)
 
 async def send_message_to_client(client: WebSocket, message: dict):
     if not isinstance(message, dict):
@@ -76,7 +85,7 @@ async def handle_client(websocket: WebSocket, session_manager: SessionManager):
                 user_sessions = session_manager.get_user_sessions()
 
                 if message_type == "create_server":
-                    session_id = generate_hex_code(10)
+                    session_id = generate_deci_code(6)
                     print(f"[ client created chat :: session_id {session_id} ]")
                     user_id = payload['user_id']
                     host_name = payload['host_name']
@@ -160,13 +169,14 @@ async def handle_disconnect(websocket, session_manager):
     user_sessions.pop(user_id, None)
 
 @app.websocket("/ws/chat")
-async def websocket_endpoint(websocket: WebSocket, session_manager: SessionManager = Depends(lambda: session_manager)):
+async def websocket_endpoint(websocket: WebSocket): #, session_manager: SessionManager = Depends(lambda: session_manager)
     print("[ client connected :: preparing setup ]")
     print(f" current connected sessions :: {session_manager.get_active_sessions()}")
     await handle_client(websocket, session_manager)
 
 
-#"http://127.0.0.1:13349"
+#"http://127.0.0.1:13394
+# ]]"
 @app.post("/test")
 async def test():
     return {"response": True}

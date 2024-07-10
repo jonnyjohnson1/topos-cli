@@ -2,7 +2,7 @@ import asyncio
 import websockets
 
 HOST = "127.0.0.1"
-PORT = 13349
+PORT = 13394
 
 async def listen_for_messages(uri):
     try:
