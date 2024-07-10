@@ -97,6 +97,8 @@ ipython_config.py
 /.idea
 /.DS_Store
 /_cache
+/_conv_cache
+
 /.env
 .DS_Store
 /topos/test/accounts.json

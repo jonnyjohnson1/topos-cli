@@ -2,7 +2,7 @@ import socket
 import threading
 
 HOST = "127.0.0.1"
-PORT = 13349
+PORT = 13394
 LISTENER_LIMIT = 5
 active_clients = [] # list of all currently conencted users
 
