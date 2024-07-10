@@ -6,13 +6,13 @@ def get_root_directory():
     # Get the current file's directory
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     
-    # Find the first occurrence of "monster" from the right
-    monster_index = current_file_directory.rfind("topos")
+    # Find the first occurrence of "topos" from the right
+    topos_index = current_file_directory.rfind("topos")
     
-    if monster_index != -1:
-        # Get the path up to the first "monster" directory
-        base_monster_directory = current_file_directory[:monster_index + len("topos")]
-        return base_monster_directory
+    if topos_index != -1:
+        # Get the path up to the first "topos" directory
+        base_topos_directory = current_file_directory[:topos_index + len("topos")]
+        return base_topos_directory
     else:
         raise ValueError("The 'topos' directory was not found in the path.")
     

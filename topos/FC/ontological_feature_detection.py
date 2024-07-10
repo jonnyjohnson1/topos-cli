@@ -8,7 +8,11 @@ import spacy
 import warnings
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 from datetime import datetime
+
 from topos.services.database.app_state import AppState
+from topos.utilities.utils import get_root_directory
+import os
+import yaml
 
 # Suppress specific warnings related to model initialization
 warnings.filterwarnings("ignore", message="Some weights of the model checkpoint at")
@@ -32,8 +36,13 @@ class OntologicalFeatureDetection:
         # Initialize the tokenizer and model for SRL
         self.tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER")
         self.model = AutoModelForTokenClassification.from_pretrained("dslim/bert-base-NER")
+        # Assuming the config.yaml is in ./topos/ relative to setup.py directory
+        config_path = os.path.join(get_root_directory(), 'config.yaml')
 
-        spacy_model_name = 'en_core_web_lg'
+        with open(config_path, 'r') as file:
+            settings = yaml.safe_load(file)
+        
+        spacy_model_name = settings.get('active_spacy_model')
 
         # Load SpaCy models
         try:
