@@ -1,9 +1,15 @@
+import os
+
 import spacy
 from spacy.tokens import Token
 import yaml
 
+from topos.utilities.utils import get_root_directory
 
-with open('config.yaml', 'r') as file:
+# Assuming the config.yaml is in ./topos/ relative to setup.py directory
+config_path = os.path.join(get_root_directory(), 'config.yaml')
+
+with open(config_path, 'r') as file:
     settings = yaml.safe_load(file)
 
 # Load the spacy model setting

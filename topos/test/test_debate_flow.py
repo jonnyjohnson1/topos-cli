@@ -26,8 +26,6 @@ class TestDebateFlow(unittest.IsolatedAsyncioTestCase):
         self.neo4j_test_database = os.getenv("NEO4J_TEST_DATABASE")
 
         # Initialize app state with Neo4j connection details
-        # TODO select database
-        if opensource "sessionId cachemanageer" else neo4j
         self.app_state = AppState(self.neo4j_uri, self.neo4j_user, self.neo4j_password, self.neo4j_test_database)
 
         # Initialize the Neo4j connection
@@ -35,7 +33,7 @@ class TestDebateFlow(unittest.IsolatedAsyncioTestCase):
 
         # Initialize the ontological feature detection with the test database
         self.ofd = OntologicalFeatureDetection(self.neo4j_uri, self.neo4j_user, self.neo4j_password,
-                                               self.neo4j_test_database)
+                                               self.neo4j_test_database, True)
 
         # Initialize DebateSimulator
         self.debate_simulator = DebateSimulator()
@@ -88,8 +86,6 @@ class TestDebateFlow(unittest.IsolatedAsyncioTestCase):
                 "userFED": 0
             }
 
-            # TODO Jonny- write test cases with multiple arguments per message
-
             # send messages one by one to ensure the graph database gets filled out step by step
             for message in message_data:
                 data = json.dumps({
@@ -101,13 +97,7 @@ class TestDebateFlow(unittest.IsolatedAsyncioTestCase):
                     "topic": "Chess vs Checkers"
                 })
                 await self.debate_simulator.debate_step(websocket, data, app_state)
-                
-                # Step 1: run how message impacts debate
-                # return add websocket.send_json({status: "user_message_analysis", data: {}})
-                # Step 2: run full debate analysis
-                # return ontological feature detection -> converted mermaid chart to return to front end
 
-               
                 # Update expected messages count
                 user_id = message["data"]["user_id"]
                 expected_messages_count[user_id] += 1

@@ -1,3 +1,16 @@
+/topos/_cache/*
+!/topos/_cache/.gitignore
+
+/topos/_conv_cache/*
+!/topos/_conv_cache/.gitignore
+
+/topos/test/_cache/*
+!/topos/test/_cache/.gitignore
+
+/topos/test/_conv_cache/*
+!/topos/test/_conv_cache/.gitignore
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -85,3 +98,7 @@ ipython_config.py
 /.DS_Store
 /_cache
 /_conv_cache
+
+/.env
+.DS_Store
+/topos/test/accounts.json

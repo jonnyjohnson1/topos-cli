@@ -19,12 +19,12 @@ class ConversationCacheManager:
             print(self.cache_dir)
         except Exception as e:
             print("FAILED TO GET CACHE self.cache_dir")
-            logging.error(f"Failed to load from cache {cache_path}: {e}")
+            logging.error(f"Failed to load from cache {self.cache_dir}: {e}")
         try:
             os.path.join(self.cache_dir, filename)
         except Exception as e:
             print("FAILED TO GET CACHE PATH")
-            logging.error(f"Failed to load from cache {cache_path}: {e}")
+            logging.error(f"Failed to load from cache {self.cache_dir}: {e}")
         return os.path.join(self.cache_dir, filename)
 
     def load_from_cache(self, conv_id, prefix=""):
