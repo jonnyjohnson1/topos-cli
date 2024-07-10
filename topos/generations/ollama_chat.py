@@ -18,3 +18,11 @@ def generate_response(context, prompt, model="solar", temperature=0):
         stream=False
     )
     return response["message"]["content"]
+
+def generate_response_messages(message_history, model="solar", temperature=0):
+    response = ollama.chat(
+        model=model,
+        messages=message_history,
+        stream=False
+    )
+    return response["message"]["content"]
