@@ -51,7 +51,7 @@ def refine_mermaid_lines(mermaid_chart):
             refined_lines.append(line)
     return '\n'.join(refined_lines)
 
-def get_ontology(message):
+async def get_mermaid_chart(message, websocket = None):
     """
     Input: String Message
     Output: mermaid chart
@@ -93,11 +93,15 @@ def get_ontology(message):
     prompt = f"For the sake of illumination, represent this speaker's sentence in triples: {message}"
     system_ctx = system_role + system_directive + system_examples
     print("\t[ generating sentence_abstractive_graph_triples ]")
+    if websocket:
+        await websocket.send_json({"status": "generating", "response": "generating sentence_abstractive_graph_triples", 'completed': False})
     sentence_abstractive_graph_triples = generate_response(system_ctx, prompt, model='dolphin-llama3')
     # print(sentence_abstractive_graph_triples)
     
     prompt = f"We were just given us the above triples to represent this message: '{message}'. Improve and correct their triples in a plaintext codeblock."
     print("\t[ generating refined_abstractive_graph_triples ]")
+    if websocket:
+        await websocket.send_json({"status": "generating", "response": "generating refined_abstractive_graph_triples", 'completed': False})
     refined_abstractive_graph_triples = generate_response(sentence_abstractive_graph_triples, prompt, model='dolphin-llama3') # a second pass to refine the first generation's responses
     # what is being said, 
     
@@ -149,8 +153,12 @@ graph TD;
     while attempt < 3:
         if attempt == 0:
             print("\t\t[ generating mermaid chart ]")
+        if websocket:
+            await websocket.send_json({"status": "generating", "response": "generating mermaid_chart_from_triples", 'completed': False})
         else:
-            print(f"\t\t[ generating mermaid chart try {attempt + 1}]")
+            print(f"\t\t[ generating mermaid chart :: try {attempt + 1}]")
+            if websocket:
+                await websocket.send_json({"status": "generating", "response": f"generating mermaid_chart_from_triples :: try {attempt + 1}", 'completed': False})
         response = generate_response_messages(message_history, model='dolphin-llama3')
         mermaid_chart = extract_mermaid_chart(response)
         if mermaid_chart:
@@ -162,14 +170,11 @@ graph TD;
     return "Failed to generate mermaid"
 
 
-
-
-
 # message = "Why can't we go to High School for 10 years instead of 4!!!"
 # message2 = "Isn't Italy a better country than Spain?"
 # message3 = "The United States could do with a little less spending"
 # message4 = "As a group creating a product, we should be steady, have a clear view of the future, and not appear to succumb to dynamic market forces. If their argument takes over ours, they then argue that our organization's valuation could be nothing tomorrow because a new yet-to-be-made (ghost) tech will eat us up. Then they give us no money."
 # message5 = "Furthermore, reading improves vocabulary and language skills, which is not as effectively achieved through watching TV."
-# syntax = get_ontology(message5)
+# syntax = get_mermaid_chart(message4)
 # print("MERMAID_CHART:\n", syntax)
 
