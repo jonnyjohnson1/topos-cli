@@ -136,21 +136,27 @@ class DebateSimulator:
         if DebateSimulator._instance is not None:
             raise Exception("This class is a singleton!")
         else:
+            load_dotenv()  # Load environment variables
+
             # Load the pre-trained model and tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
             self.model = AutoModel.from_pretrained('bert-base-uncased')
 
             self.operational_llm_model = "ollama:dolphin-llama3"
+            self.argument_detection_llm_model = "claude:claude-3-5-sonnet-20240620"
+            # self.argument_detection_llm_model = "openai:gpt-4o"
+
+            ONE_API_API_KEY = os.getenv("ONE_API_API_KEY")
 
             # Initialize the SentenceTransformer model for embedding text
-            self.fast_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-            self.argument_detection = ArgumentDetection(model=self.operational_llm_model, api_key="ollama")
+            # self.fast_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            self.fast_embedding_model = SentenceTransformer('all-mpnet-base-v2')
+
+            self.argument_detection = ArgumentDetection(model=self.argument_detection_llm_model, api_key=ONE_API_API_KEY)
 
             self.semantic_compression = SemanticCompression(model=self.operational_llm_model, api_key="ollama")
 
             self.app_state = AppState.get_instance()
-
-            load_dotenv()  # Load environment variables
 
             neo4j_uri = os.getenv("NEO4J_URI")
             neo4j_user = os.getenv("NEO4J_USER")
@@ -579,7 +585,7 @@ class DebateSimulator:
             return
 
         # Define similarity cutoff threshold
-        cutoff = 0.5
+        cutoff = 0.35
 
         # Define unaddressed score multiplier
         unaddressed_score_multiplier = 2.5
@@ -604,6 +610,13 @@ class DebateSimulator:
         print(f"\t[ reflect :: aggregated_scores :: {aggregated_scores} ]")
         print(f"\t[ reflect :: addressed_clusters :: {addressed_clusters} ]")
         print(f"\t[ reflect :: unaddressed_clusters :: {unaddressed_clusters} ]")
+
+        # Print the number of unaddressed clusters for each user
+        print("\nUnaddressed Clusters Summary:")
+        for user_id, unaddressed_list in unaddressed_clusters.items():
+            num_unaddressed = len(unaddressed_list)
+            print(f"\t\t[ User {user_id}: {num_unaddressed} unaddressed cluster(s) ]")
+
 
         app_state.set_state("wepcc_results", wepcc_results)
         app_state.set_state("aggregated_scores", aggregated_scores)
@@ -663,7 +676,7 @@ class DebateSimulator:
                     'claim': claim,
                     'counterclaim': counterclaim
                 }
-                # self.pretty_print_wepcc_result(user_id, cluster_id, wepcc_results[user_id][cluster_id])
+                self.pretty_print_wepcc_result(user_id, cluster_id, wepcc_results[user_id][cluster_id])
                 # print(
                 #     f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_results[user_id][cluster_id]} ]")
 
@@ -829,5 +842,18 @@ class DebateSimulator:
         return final_scores
 
     def pretty_print_wepcc_result(self, user_id, cluster_id, wepcc_result):
-        pp = pprint.PrettyPrinter(indent=4)
-        pp.pprint(f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} :: {wepcc_result} ]")
+        print(f"\t[ reflect :: WEPCC for user {user_id}, cluster {cluster_id} ]")
+
+        print("\nWarrant:")
+        print(json.loads(wepcc_result["warrant"])["content"])
+        print("\nEvidence:")
+        print(json.loads(wepcc_result["evidence"])["content"])
+        print("\nPersuasiveness Justification:")
+        print("Persuasiveness Score:", json.loads(wepcc_result["persuasiveness_justification"])["content"]["persuasiveness_score"])
+        print("Justification:", json.loads(wepcc_result["persuasiveness_justification"])["content"]["justification"])
+        print("\nClaim:")
+        print(json.loads(wepcc_result["claim"])["content"])
+        print("\nCounterclaim:")
+        print(json.loads(wepcc_result["counterclaim"])["content"])
+        print("\n")
+
