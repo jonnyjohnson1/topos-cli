@@ -43,7 +43,9 @@ ngrok has a gated requests/month under its free tier, then requires you pay for 
 3. `zrok status` should show you information
 4. Route local path through zrok: `zrok share public http://0.0.0.0:13341`
 This will take you to a new screen with an https://<url> at the top.
-Insert this url into the field under settings-> "Api Endpoints" -> "Custom API" 
-5. After you've insert it into the field, press the test button, and "hello world" should appear next to the button. 
+5. This will be your custom URL that links the front end to the backend. To enter it on the front-end:
+- Web/desktop: Insert this url into the field under settings-> "Api Endpoints" -> "Custom API" 
+- Mobile: Insert this url through double-chat icon --> settings (swipe-left to get to the settings page) --> "API Endpoints" --> "Custom API" 
+5. After you've insert the zrok URL into the field, press the test button. If "hello world" appears next to the test button, it worked. If not, an error has occurred.
 
 ### Step 4b (ngrok): Set up web proxy
