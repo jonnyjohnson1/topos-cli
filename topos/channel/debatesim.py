@@ -351,7 +351,7 @@ class DebateSimulator:
         app_state.set_state(f"prior_ontology_{session_id}", prior_ontology)
 
         mermaid_to_ascii = self.ontological_feature_detection.mermaid_to_ascii(current_ontology)
-        # print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
+        print(f"[ mermaid_to_ascii: {mermaid_to_ascii} ]")
 
         new_history_item = {
             "data": {
@@ -375,7 +375,7 @@ class DebateSimulator:
         if cancel_old_tasks:
             await self.stop_all_reflect_tasks()
 
-        # print(f"Creating check_and_reflect task for message: {message_id}")
+        print(f"Creating check_and_reflect task for message: {message_id}")
         task = {
             'type': 'check_and_reflect',
             'session_id': session_id,
@@ -384,7 +384,7 @@ class DebateSimulator:
             'message_id': message_id,
             'message': message
         }
-        # print(f"Task created: {task}")
+        print(f"Task created: {task}")
         await self.add_task(task)
         # print(f"Task added to queue for message: {message_id}")
 

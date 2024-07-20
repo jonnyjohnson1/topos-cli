@@ -20,6 +20,14 @@ class ConversationIDRequest(BaseModel):
     conversation_id: str
 
 
+@router.get("/health")
+async def health_check():
+    try:
+        # Perform any additional checks here if needed
+        return {"status": "healthy"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Health check failed: {e}")
+
 @router.post("/chat_conversation_analysis")
 async def chat_conversation_analysis(request: ConversationIDRequest):
     conversation_id = request.conversation_id

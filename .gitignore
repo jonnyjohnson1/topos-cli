@@ -103,3 +103,4 @@ ipython_config.py
 topos/.env
 .DS_Store
 /topos/test/accounts.json
+topos/chat_api_gcp/

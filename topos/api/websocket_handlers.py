@@ -97,7 +97,7 @@ async def chat(websocket: WebSocket):
                 try:
                     text_classifiers = base_text_classifier(last_message)
                 except Exception as e:
-                    logging.error(f"Failed to compute base_text_classifier: {cache_path}: {e}")
+                    print(f"Failed to compute base_text_classifier: {e}")
                 duration = time.time() - start_time
                 print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
             
@@ -385,6 +385,36 @@ async def meta_chat(websocket: WebSocket):
                             await websocket.send_json({"status": "completed", "response": mermaid_string, 'completed': True})
                     except Exception as e:
                         await websocket.send_json({"status": "error", "response": f"Error: {e}", 'completed': True})
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+    except Exception as e:
+        await websocket.send_json({"status": "error", "message": str(e)})
+        await websocket.close()
+    finally:
+        await websocket.close()
+
+
+
+
+@router.websocket("/debate_flow_with_jwt")
+async def debate_flow_with_jwt(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            message_data = payload.get("message_data", None)
+            model = payload.get("model", None)
+            
+            if message_data:
+                await websocket.send_json({"status": "generating", "response": "starting debate flow analysis", 'completed': False})
+                try:
+                    # Assuming DebateSimulator is correctly set up
+                    debate_simulator = await DebateSimulator.get_instance()
+                    response_data = debate_simulator.process_messages(message_data, model)
+                    await websocket.send_json({"status": "completed", "response": response_data, 'completed': True})
+                except Exception as e:
+                    await websocket.send_json({"status": "error", "response": f"Error: {e}", 'completed': True})
     except WebSocketDisconnect:
         print("WebSocket disconnected")
     except Exception as e:

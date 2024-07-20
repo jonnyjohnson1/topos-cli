@@ -46,6 +46,8 @@ ngrok has a gated requests/month under its free tier, then requires you pay for 
 5. Route local path through zrok: `zrok share public http://0.0.0.0:13341`
 This will take you to a new screen with an https://<url> at the top.
 Insert this url into the field under settings-> "Api Endpoints" -> "Custom API" 
-6. After you've insert it into the field, press the test button, and "hello world" should appear next to the button. 
+6. After you've insert it into the field, press the test button, and "hello world" should appear next to the button.
+
+[ ] Enable permanent sharing of zrok url [docs](https://docs.zrok.io/docs/guides/docker-share/#permanent-public-share) (requires Docker)
 
 ### Step 4b (ngrok): Set up web proxy
