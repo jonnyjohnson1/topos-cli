@@ -102,3 +102,4 @@ ipython_config.py
 /.env
 .DS_Store
 /topos/test/accounts.json
+.env
