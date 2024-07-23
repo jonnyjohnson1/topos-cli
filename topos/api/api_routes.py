@@ -1,8 +1,10 @@
 # api_routes.py
 
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 import requests
+import signal
 import tkinter as tk
 from tkinter import filedialog
 from topos.FC.conversation_cache_manager import ConversationCacheManager
@@ -20,6 +22,12 @@ class ConversationIDRequest(BaseModel):
     conversation_id: str
 
 
+@router.post("/shutdown")
+def shutdown(request: Request):
+    os.kill(os.getpid(), signal.SIGTERM)
+    return JSONResponse(content={"message": "Server shutting down..."})
+
+
 @router.get("/health")
 async def health_check():
     try:
@@ -27,6 +35,7 @@ async def health_check():
         return {"status": "healthy"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Health check failed: {e}")
+
 
 @router.post("/chat_conversation_analysis")
 async def chat_conversation_analysis(request: ConversationIDRequest):
