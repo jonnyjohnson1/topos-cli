@@ -58,7 +58,7 @@ async def chat(websocket: WebSocket):
                 has_topic = True
                 prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
 
-            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style:"
+            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator."
             user_prompt = ""
             if message_history:
                 # Add the message history prior to the message
