@@ -13,7 +13,7 @@ def download_spacy_model(model_selection):
     else: #default
         model_name = "en_core_web_sm"
     try:
-        subprocess.run(['python3', '-m', 'spacy', 'download', model_name], check=True)
+        subprocess.run(['python', '-m', 'spacy', 'download', model_name], check=True)
         # Write updated settings to YAML file
         with open('config.yaml', 'w') as file:
             yaml.dump({'active_spacy_model': model_name}, file)
