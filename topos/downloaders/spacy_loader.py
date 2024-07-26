@@ -1,5 +1,7 @@
 import subprocess
 import yaml
+from ..utilities.utils import get_python_command
+
 
 def download_spacy_model(model_selection):
     if model_selection == 'small':
@@ -12,8 +14,9 @@ def download_spacy_model(model_selection):
         model_name = "en_core_web_trf"
     else: #default
         model_name = "en_core_web_sm"
+    python_command = get_python_command()
     try:
-        subprocess.run(['python', '-m', 'spacy', 'download', model_name], check=True)
+        subprocess.run([python_command, '-m', 'spacy', 'download', model_name], check=True)
         # Write updated settings to YAML file
         with open('config.yaml', 'w') as file:
             yaml.dump({'active_spacy_model': model_name}, file)
