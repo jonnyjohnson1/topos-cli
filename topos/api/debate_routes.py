@@ -9,7 +9,7 @@ from fastapi import FastAPI, Form, Depends, APIRouter
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
 import json
 import jwt
 from uuid import uuid4
@@ -103,11 +103,10 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     # Create JWT token
     token_data = {
         "user_id": user_id,
-        "exp": datetime.now(UTC) + timedelta(hours=1)
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1)
     }
     token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
     return {"access_token": token, "token_type": "bearer"}
-
 
 
 # WebSocket endpoint with JWT validation

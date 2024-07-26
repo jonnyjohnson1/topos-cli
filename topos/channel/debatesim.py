@@ -10,7 +10,7 @@ import pprint
 import os
 from queue import Queue
 
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
 import time
 
 from dotenv import load_dotenv
@@ -176,7 +176,7 @@ class DebateSimulator:
         payload = {
             "user_id": user_id,
             "session_id": session_id,
-            "exp": datetime.now(UTC) + timedelta(hours=1)  # Token valid for 1 hour
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1)  # Token valid for 1 hour
         }
         token = jwt.encode(payload, self.jwt_secret, algorithm="HS256")
         return token
