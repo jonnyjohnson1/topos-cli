@@ -89,10 +89,22 @@ async def admin_set_all_accounts(request: Request):
     save_accounts(accounts)
     return {"status": "success"}
 
+@router.post("/admin_add_accounts")
+async def admin_add_accounts(request: Request):
+    form_data = await request.form()
+    accounts = load_accounts()
+
+    new_accounts = {key: form_data[key] for key in form_data}
+
+    accounts.update(new_accounts)
+    save_accounts(accounts)
+    return {"status": "success"}
+
 
 # Add the route to issue JWT tokens
 @router.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    print(f"Received login request for user {form_data.username}")
     accounts = load_accounts()
 
     # Validate user credentials
@@ -106,6 +118,8 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "exp": datetime.now(UTC) + timedelta(hours=1)
     }
     token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+    print(f"Login successful for user {form_data.username}")
+
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -138,78 +152,93 @@ async def websocket_endpoint(websocket: WebSocket, token: Union[str, None] = Que
     try:
         while True:
             print(f"Waiting for message from user {user_id}")
-            data = await websocket.receive_json()
 
-            message = data.get("message")
-            generation_nonce = data.get("generation_nonce", str(uuid4()))
-            current_topic = data.get("topic", "Unknown")
-            processing_config = data.get("processing_config", {})
-            user_name = data.get("user_name", "user")
-            role = data.get("role", "user")
+            data = []
+            try:
+                data = await websocket.receive_json()
+                # Process the data
 
-            # print(f"Received message: {message}")
+                message = data.get("message")
+                user_message_id = data.get("user_message_id")
+                generation_nonce = data.get("generation_nonce", str(uuid4()))
+                current_topic = data.get("topic", "Unknown")
+                processing_config = data.get("processing_config", {})
+                user_name = data.get("user_name", "user")
+                role = data.get("role", "user")
 
-            # Set default debate values to calculate
-            default_config = {
-                "message_topic_analysis": True,
-                "message_topic_mermaid_chart": True,
-                "topic_cluster_num": True,
-            }
+                # print(f"Received message: {message}")
 
-            # Update default_config with provided processing_config, if any
-            config = {**default_config, **processing_config}
+                # Set default debate values to calculate
+                default_config = {
+                    "message_topic_analysis": True,
+                    "message_topic_mermaid_chart": True,
+                    "topic_cluster_num": True,
+                }
 
-            integrate_data = {
-                "message": message,
-                "user_id": user_id,
-                "session_id": session_id,
-                "generation_nonce": generation_nonce
-            }
+                # Update default_config with provided processing_config, if any
+                config = {**default_config, **processing_config}
 
-            # Integrate the message and start processing
-            mermaid_ontology = await debate_simulator.integrate(token, json.dumps(integrate_data), debate_simulator.app_state, False)
+                integrate_data = {
+                    "message": message,
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "generation_nonce": generation_nonce
+                }
 
-            output_data = {'mermaid_ontology': json.dumps(mermaid_ontology)}
+                # Integrate the message and start processing
+                mermaid_ontology, service_id = await debate_simulator.integrate(token, json.dumps(integrate_data), debate_simulator.app_state, False)
 
-            if config['message_topic_analysis'] or config['message_topic_mermaid_chart']:
-                print(f"\t[ save to conv cache :: conversation {session_id} ]")
-                try:
-                    output_data = {
+                output_data = {'mermaid_ontology': json.dumps(mermaid_ontology)}
+
+                if config['message_topic_analysis'] or config['message_topic_mermaid_chart']:
+                    print(f"\t[ save to conv cache :: conversation {session_id} ]")
+                    try:
+                        output_data = {
+                            'user_name': user_name,
+                            'user_id': user_id,
+                            'role': role,
+                            'timestamp': datetime.now().isoformat(),
+                            'message': message
+                        }
+                    except Exception as e:
+                        print("Error", e)
+
+                    if config.get('calculateModerationTags'):
+                        message_topic_analysis = {}
+                        topic_cluster_num = 0
+                        message_topic_mermaid_chart = ""
+
+                        output_data['analyses'] = {
+                            'message_topic_analysis': message_topic_analysis,
+                            'topic_cluster_num': topic_cluster_num,
+                            'message_topic_mermaid_chart': message_topic_mermaid_chart
+                        }
+                    conv_cache_manager.save_to_cache(session_id, output_data)
+                else:
+                    print(f"\t[ save to conv cache :: conversation {session_id} ]")
+                    conv_cache_manager.save_to_cache(session_id, {
                         'user_name': user_name,
                         'user_id': user_id,
                         'role': role,
+                        'message': message,
                         'timestamp': datetime.now().isoformat(),
-                        'message': message
-                    }
-                except Exception as e:
-                    print("Error", e)
+                    })
 
-                if config.get('calculateModerationTags'):
-                    message_topic_analysis = {}
-                    topic_cluster_num = 0
-                    message_topic_mermaid_chart = ""
-
-                    output_data['analyses'] = {
-                        'message_topic_analysis': message_topic_analysis,
-                        'topic_cluster_num': topic_cluster_num,
-                        'message_topic_mermaid_chart': message_topic_mermaid_chart
-                    }
-                conv_cache_manager.save_to_cache(session_id, output_data)
-            else:
-                print(f"\t[ save to conv cache :: conversation {session_id} ]")
-                conv_cache_manager.save_to_cache(session_id, {
-                    'user_name': user_name,
-                    'user_id': user_id,
-                    'role': role,
-                    'message': message,
-                    'timestamp': datetime.now().isoformat(),
+                # Send initial processing result back to the client
+                await websocket.send_json({
+                    "status": "message_processed",
+                    "user_message_id": user_message_id,
+                    "service_id": service_id,
+                    "initial_analysis": output_data
                 })
-
-            # Send initial processing result back to the client
-            await websocket.send_json({
-                "status": "message_processed",
-                "initial_analysis": output_data
-            })
+            except json.JSONDecodeError:
+                print("Received invalid JSON data")
+            except WebSocketDisconnect:
+                print(f"WebSocket disconnected for user {user_id}")
+                await debate_simulator.remove_from_websocket_group(session_id, websocket)
+                break
+            except Exception as e:
+                print(f"Error in WebSocket communication: {str(e)}")
 
     except WebSocketDisconnect:
         await debate_simulator.remove_from_websocket_group(session_id, websocket)

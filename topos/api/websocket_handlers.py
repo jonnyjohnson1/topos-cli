@@ -1,6 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from datetime import datetime
 import time
+import traceback
 
 from ..generations.ollama_chat import stream_chat
 from topos.FC.semantic_compression import SemanticCompression
@@ -145,7 +146,7 @@ async def chat(websocket: WebSocket):
 
             # Fetch semantic category from the output
             semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
-            semantic_category = semantic_compression.fetch_semantic_category(output_combined)
+            semantic_category = (semantic_compression.fetch_semantic_category(output_combined)).content
 
             # Start timer for base_token_classifier
             if config['calculateInMessageNER']:
@@ -201,27 +202,9 @@ async def chat(websocket: WebSocket):
     except WebSocketDisconnect:
         print("WebSocket disconnected")
     except Exception as e:
+        stack_trace = traceback.format_exc()
         await websocket.send_json({"status": "error", "message": str(e)})
         await websocket.close()
-
-
-# @router.websocket("/websocket_debate")
-# async def debate(websocket: WebSocket):
-#     app_state = {"debate": {"topic": "Unknown", "messages": []}, "user_id": "userPRIME", "session_id": "sessionTEMP"}
-#     await websocket.accept()
-#     try:
-#         while True:
-#             data = await websocket.receive_text()
-#             result = await debate_simulator.integrate(websocket, data, app_state)
-#             await websocket.send_json({"status": "integrated", "results": json.dumps(result)})
-#     except WebSocketDisconnect:
-#         print("[ WebSocket :: disconnected ]")
-#     except Exception as e:
-#         print(f"[ Exception in WebSocket endpoint :: {e} ]")
-#         await websocket.send_json({"status": "error", "message": str(e)})
-#         await websocket.close()
-#         raise
-
 
 @router.websocket("/websocket_meta_chat")
 async def meta_chat(websocket: WebSocket):

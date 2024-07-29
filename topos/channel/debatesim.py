@@ -1,4 +1,5 @@
 # topos/channel/debatesim.py
+
 import hashlib
 import asyncio
 
@@ -136,6 +137,10 @@ class DebateSimulator:
         if DebateSimulator._instance is not None:
             raise Exception("This class is a singleton!")
         else:
+
+            if AppState._instance is None:
+                AppState(use_neo4j=use_neo4j)
+
             load_dotenv()  # Load environment variables
 
             # Load the pre-trained model and tokenizer
@@ -143,7 +148,8 @@ class DebateSimulator:
             self.model = AutoModel.from_pretrained('bert-base-uncased')
 
             self.operational_llm_model = "ollama:dolphin-llama3"
-            self.argument_detection_llm_model = "claude:claude-3-5-sonnet-20240620"
+            self.argument_detection_llm_model = "ollama:dolphin-llama3"
+            # self.argument_detection_llm_model = "claude:claude-3-5-sonnet-20240620"
             # self.argument_detection_llm_model = "openai:gpt-4o"
 
             ONE_API_API_KEY = os.getenv("ONE_API_API_KEY")
@@ -394,7 +400,7 @@ class DebateSimulator:
         await self.add_task(task)
         # print(f"Task added to queue for message: {message_id}")
 
-        return current_ontology
+        return current_ontology, message_id
 
     @staticmethod
     def generate_nonce():
@@ -656,6 +662,7 @@ class DebateSimulator:
                                         sentences=messages,
                                         user_id=user_id,
                                         generation=generation,
+
                                         session_id=session_id,
                                         coherence=1.0)  # Single message cluster always has perfect coherence
                 }
