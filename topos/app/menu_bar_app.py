@@ -1,5 +1,6 @@
-from topos.api import api
-from topos.downloaders.spacy_loader import download_spacy_model
+from ..api import api
+from ..downloaders.spacy_loader import download_spacy_model
+from topos.utilities.utils import get_root_directory
 
 import requests
 import threading
@@ -11,7 +12,7 @@ import os
 
 API_URL = "http://0.0.0.0:13341/health"
 DOCS_URL = "http://0.0.0.0:13341/docs"
-ASSETS_PATH = os.path.join(os.path.dirname(__file__), "assets/topos_white.png")
+ASSETS_PATH = os.path.join(get_root_directory(), "assets/topos_white.png")
 
 
 def start_api():
@@ -75,7 +76,8 @@ def on_exit(icon, item):
     icon.visible = False
     icon.stop()
 
-if __name__ == "__main__":
+def start_app():
+# if __name__ == "__main__":
     # Start the API in a separate thread
     api_thread = threading.Thread(target=start_api)
     api_thread.daemon = True

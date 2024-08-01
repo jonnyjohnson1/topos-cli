@@ -17,10 +17,11 @@ def main():
         """
         # import api
         from .api import api
+        from .app import menu_bar_app
         if args.web:
             api.start_web_api()
         else:
-            api.start_local_api()
+            menu_bar_app.start_app()
     
     if args.command == 'chat':
         """
