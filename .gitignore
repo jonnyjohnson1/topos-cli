@@ -10,6 +10,8 @@
 /topos/test/_conv_cache/*
 !/topos/test/_conv_cache/.gitignore
 
+# cert files
+*.pem
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
