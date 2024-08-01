@@ -13,3 +13,9 @@ zrok_chat:
 
 cert:
     openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365
+
+python:
+	pyi-makespec --onefile main.py
+	# add ('topos/config.yaml', 'topos/')
+	pyinstaller main.spec
+	create-dmg 'dist/main' --overwrite

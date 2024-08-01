@@ -142,7 +142,7 @@ async def chat(websocket: WebSocket):
             for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
                 output_combined += chunk
                 await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
-
+            
             # Fetch semantic category from the output
             # semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
             # semantic_category = semantic_compression.fetch_semantic_category(output_combined)
