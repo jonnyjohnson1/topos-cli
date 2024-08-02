@@ -16,16 +16,11 @@ class ConversationCacheManager:
         # Create a valid filename for the cache based on the input text and an optional prefix
         filename = f"cache_{prefix}_{conv_id}.pkl"
         try:
-            print(self.cache_dir)
+            cache_path = os.path.join(self.cache_dir, filename)
         except Exception as e:
-            print("FAILED TO GET CACHE self.cache_dir")
-            logging.error(f"Failed to load from cache {self.cache_dir}: {e}")
-        try:
-            os.path.join(self.cache_dir, filename)
-        except Exception as e:
-            print("FAILED TO GET CACHE PATH")
-            logging.error(f"Failed to load from cache {self.cache_dir}: {e}")
-        return os.path.join(self.cache_dir, filename)
+            logging.error(f"Failed to create cache path from directory {self.cache_dir}: {e}")
+            return None
+        return cache_path
 
     def load_from_cache(self, conv_id, prefix=""):
         """Load data from the cache using a specific prefix and order messages by timestamp."""

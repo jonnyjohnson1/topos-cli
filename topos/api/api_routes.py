@@ -36,12 +36,13 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     entity_text_counter_per_user = defaultdict(Counter)
     emotion_counter_per_user = defaultdict(Counter)
 
+    print(f"\t[ conversational analysis ]")
     # Extract counts
     for conversation_id, messages in conv_data.items():
-        print(messages)
+        print(f"\t\t[ item :: {conversation_id} ]")
         for message_id, content in messages.items():
-            print(content)
-            print(content.keys())
+            print(f"\t\t\t[ content :: {str(content)[40:]} ]")
+            print(f"\t\t\t[ keys :: {str(content.keys())[40:]} ]")
             role = content['role']
             user = role
             if role == "user" and 'user_name' in content:
@@ -71,7 +72,7 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     # print("\nEmotion Count:")
     # print(emotion_counter)            # also get a population count of all the emotions that were invoked in the conversation
 
-    print(emotion_counter_per_user)
+    print("\t\t[ emotion counter per-user :: {emotion_counter_per_user}")
     # Convert Counter objects to dictionaries
     named_entity_dict = {
         "totals": dict(named_entity_counter),
@@ -143,7 +144,7 @@ async def conv_to_image(request: ConversationIDRequest):
 
     # Get file bytes to pass to UI
     system_path = os.path.abspath("/")
-    print(system_path)
+    print(f"\t[ {system_path}")
     bytes_list = read_file_as_bytes(file_name)
     media_type = "application/json"
     
@@ -216,6 +217,7 @@ async def create_next_messages(request: ConversationTopicsRequest):
     context = create_conversation_string(conv_data, 12)
     print(f"\t[ generating summary :: model {model} :: subject {subject}]")
 
+    query = f""
     # topic list first pass
     system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
     query += """List the topics and those closely related to what this conversation traverses."""
