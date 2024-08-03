@@ -39,3 +39,8 @@ def start_web_api():
     """Function to start the API in web mode with SSL."""
     certs = get_ssl_certificates()
     uvicorn.run(app, host="0.0.0.0", port=13341, ssl_keyfile=certs['key_path'], ssl_certfile=certs['cert_path'])
+    
+
+def start_hosted_service():
+    """Function to start the API in web mode with SSL."""
+    uvicorn.run(app, host="0.0.0.0", port=8000)
