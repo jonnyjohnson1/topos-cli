@@ -41,6 +41,7 @@ textblob = "^0.18.0.post0"
 tk = "0.1.0"
 pystray = "0.19.5"
 
+supabase = "^2.6.0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
 pytest-asyncio = "^0.23.2"
