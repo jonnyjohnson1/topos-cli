@@ -51,10 +51,10 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         # Make sure to cancel the processing task when tearing down
-        if self.debate_simulator.processing_task:
-            self.debate_simulator.processing_task.cancel()
+        if self.debate_simulator.channel_engine.processing_task:
+            self.debate_simulator.channel_engine.processing_task.cancel()
             try:
-                await self.debate_simulator.processing_task
+                await self.debate_simulator.channel_engine.processing_task
             except asyncio.CancelledError:
                 pass
 

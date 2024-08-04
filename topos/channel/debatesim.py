@@ -1,5 +1,4 @@
 # topos/channel/debatesim.py
-
 import hashlib
 import asyncio
 
@@ -41,6 +40,8 @@ from ..services.classification_service.base_analysis import base_text_classifier
 from topos.FC.conversation_cache_manager import ConversationCacheManager
 from topos.FC.semantic_compression import SemanticCompression
 from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
+
+from topos.channel.channel_engine import ChannelEngine
 
 # chess is more complicated than checkers but less complicated than go
 
@@ -180,9 +181,9 @@ class DebateSimulator:
             self.current_generation = None
             self.websocket_groups = {}
 
-            self.task_queue = asyncio.Queue()
-            self.processing_task = None
-            self.running = False
+            self.channel_engine = ChannelEngine()
+            self.channel_engine.register_task_handler('check_and_reflect', self.check_and_reflect)  # Register the handler
+            self.channel_engine.register_task_handler('broadcast', self.websocket_broadcast)
 
     def generate_jwt_token(self, user_id, session_id):
         payload = {
@@ -212,91 +213,22 @@ class DebateSimulator:
         finally:
             self._lock.release()
 
-    async def add_task(self, task):
-        print(f"Adding task to queue: {task['type']}")
-        await self.task_queue.put(task)
-        print(f"Task added to queue: {task['type']}")
-
-        if not self.running:
-            print("Starting task processing")
-            await asyncio.sleep(0)  # Yield control to the event loop
-            await self.start_processing()
-
-    async def wait_for_tasks(self):
-        await self.task_queue.join()
-
-    async def reset_processing_queue(self):
-        async with self._lock:
-            self.running = False
-            if self.processing_task:
-                self.processing_task.cancel()
-                try:
-                    await self.processing_task
-                except asyncio.CancelledError:
-                    pass
-
-            while not self.task_queue.empty():
-                try:
-                    self.task_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-
-            self.current_generation = None
-            self.running = True
-            self.processing_task = asyncio.create_task(self.process_tasks())
-
-    async def start_processing(self):
-        self.running = True
-        self.processing_task = asyncio.create_task(self.process_tasks())
-
-    async def stop_processing(self):
-        self.running = False
-        if self.processing_task:
-            self.processing_task.cancel()
-            try:
-                await self.processing_task
-            except asyncio.CancelledError:
-                pass
-
-    async def process_tasks(self):
-        print("Starting to process tasks")
-        while self.running:
-            try:
-                task = await self.task_queue.get()
-                print(f"\t\t\t[ Processing task: {task['type']} ]")
-                try:
-                    if task['type'] == 'check_and_reflect':
-                        await self.execute_task(task)
-                    else:
-                        print(f"Unknown task type: {task['type']}")
-                    print(f"\t\t\t[ Finished processing task: {task['type']} ]")
-                finally:
-                    self.task_queue.task_done()
-            except asyncio.CancelledError:
-                print("Task processing was cancelled")
-                # traceback.print_exc()
-                break
-            except Exception as e:
-                print(f"Error processing task: {e}")
-                traceback.print_exc()
-        print("Stopped processing tasks")
-
-    async def execute_task(self, task):
-        print(f"Executing task: {task['type']}")
-        if task['type'] == 'check_and_reflect':
-            self.current_generation = task['generation_nonce']
-            await self.check_and_reflect(task['session_id'], task['user_id'], task['generation_nonce'],
-                                         task['message_id'], task['message'])
-        elif task['type'] == 'broadcast':
-            await self.websocket_broadcast(task['websocket'], task['message'])
-        # print(f"Finished executing task: {task['type']}")
+    # async def execute_task(self, task):
+    #     print(f"Executing task: {task['type']}")
+    #     if task['type'] == 'check_and_reflect':
+    #         self.current_generation = task['generation_nonce']
+    #         await self.check_and_reflect(task['session_id'], task['user_id'], task['generation_nonce'],
+    #                                      task['message_id'], task['message'])
+    #     elif task['type'] == 'broadcast':
+    #         await self.websocket_broadcast(task['websocket'], task['message'])
+    #     # print(f"Finished executing task: {task['type']}")
 
     async def websocket_broadcast(self, websocket, message):
         if message:
             await websocket.send_text(message)
 
     async def stop_all_reflect_tasks(self):
-        await self.reset_processing_queue()
+        await self.channel_engine.reset_processing_queue()
 
     async def get_ontology(self, user_id, session_id, message_id, message):
         composable_string = f"for user {user_id}, of {session_id}, the message is: {message}"
@@ -396,8 +328,8 @@ class DebateSimulator:
             'message_id': message_id,
             'message': message
         }
-        # print(f"Task created: {task}")
-        await self.add_task(task)
+        print(f"Task created: {task}")
+        await self.channel_engine.add_task(task)
         # print(f"Task added to queue for message: {message_id}")
 
         return current_ontology, message_id

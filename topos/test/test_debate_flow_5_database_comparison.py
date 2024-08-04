@@ -51,15 +51,16 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         # Make sure to cancel the processing task when tearing down
-        if self.debate_simulator.processing_task:
-            self.debate_simulator.processing_task.cancel()
+        if self.debate_simulator.channel_engine.processing_task:
+            self.debate_simulator.channel_engine.processing_task.cancel()
             try:
-                await self.debate_simulator.processing_task
+                await self.debate_simulator.channel_engine.processing_task
             except asyncio.CancelledError:
                 pass
 
         # Reset the singleton instance
         AppState._instance = None
+
 
     def test_jwt_generation_and_validation(self):
         user_id = f"user_{str(uuid4())}"
