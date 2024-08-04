@@ -1,9 +1,11 @@
 # app_state.py
+
 from datetime import datetime
 from threading import Lock
-from neo4j import GraphDatabase
-from topos.services.database.neo4j_connector import Neo4jConnection
-
+from typing import Union, Dict, Any
+from topos.services.database.database_interface import DatabaseInterface
+from topos.services.database.neo4j_database import Neo4jDatabase
+from topos.services.database.supabase_database import SupabaseDatabase
 
 class AppState:
     _instance = None
@@ -16,12 +18,12 @@ class AppState:
                 cls._instance._initialized = False
             return cls._instance
 
-    def __init__(self, neo4j_uri=None, neo4j_user=None, neo4j_password=None, neo4j_db_name=None, use_neo4j=True):
+    def __init__(self, db_type: str = None, **kwargs):
         if self._initialized:
             return
-        self._init_state(neo4j_uri, neo4j_user, neo4j_password, neo4j_db_name, use_neo4j)
+        self._init_state(db_type, **kwargs)
         self._initialized = True
-        print("\t[ app_state :: instance initialized ]")
+        print("\t[ AppState :: instance initialized ]")
 
     @classmethod
     def get_instance(cls):
@@ -29,60 +31,63 @@ class AppState:
             raise Exception("AppState has not been initialized, call AppState with parameters first.")
         return cls._instance
 
-    def _init_state(self, neo4j_uri, neo4j_user, neo4j_password, neo4j_db_name, use_neo4j=True):
-        print("\t\t[ app_state :: init ]")
-        self.state = {}
-        self.neo4j_db_name = neo4j_db_name
-        self.driver = None
-        self.neo4j_conn = None
+    def _init_state(self, db_type: str = None, **kwargs):
+        print("\t\t[ AppState :: init ]")
+        self.state: Dict[str, Any] = {}
+        self.db: Union[DatabaseInterface, None] = None
+        self.db_type: Union[str, None] = None
 
-        if use_neo4j:
-            # Initialize Neo4j connection using singleton
-            self.neo4j_conn = Neo4jConnection(neo4j_uri, neo4j_user, neo4j_password)
-            self.driver = self.neo4j_conn.get_driver()
+        if db_type:
+            self.set_database(db_type, **kwargs)
 
-    def get_driver(self):
-        return self.driver
+    def set_database(self, db_type: str, **kwargs):
+        print(f"\t\t[ AppState :: setting database to {db_type} ]")
+        if db_type == "neo4j":
+            self.db = Neo4jDatabase(
+                kwargs.get('neo4j_uri'),
+                kwargs.get('neo4j_user'),
+                kwargs.get('neo4j_password'),
+                kwargs.get('neo4j_db_name')
+            )
+            self.db_type = "neo4j"
+        elif db_type == "supabase":
+            self.db = SupabaseDatabase(
+                kwargs.get('supabase_url'),
+                kwargs.get('supabase_key')
+            )
+            self.db_type = "supabase"
+        else:
+            raise ValueError(f"Unsupported database type: {db_type}")
 
-    def get_driver_session(self):
-        if not self.driver:
-            raise Exception("Neo4j driver is not initialized.")
-        return self.driver.session(database=self.neo4j_db_name)
+    def get_db(self) -> DatabaseInterface:
+        if not self.db:
+            raise Exception("Database has not been initialized.")
+        return self.db
 
-    def get_state(self):
+    def get_state(self) -> Dict[str, Any]:
         return self.state
 
-    def set_state(self, key, value):
+    def set_state(self, key: str, value: Any):
         self.state[key] = value
 
-    def set_value(self, key, value):
-        self.state[key] = value
-
-    def get_value(self, key, default=None):
+    def get_value(self, key: str, default: Any = None) -> Any:
         return self.state.get(key, default)
 
-    def write_ontology(self, ontology):
+    def write_ontology(self, ontology: Dict[str, Any]):
         if 'ontology' not in self.state:
             self.state['ontology'] = []
         self.state['ontology'].append(ontology)
 
-    def read_ontology(self):
+    def read_ontology(self) -> list:
         return self.state.get('ontology', [])
 
     def close(self):
-        print("\t\t[ app_state :: try close ]")
-        if self.neo4j_conn:
-            self.neo4j_conn.close()
+        print("\t\t[ AppState :: try close ]")
+        if self.db:
+            self.db.close()
         self.state = {}
         self._initialized = False
-        print("\t\t\t[ app_state :: close successful ]")
+        print("\t\t\t[ AppState :: close successful ]")
 
-    def value_exists(self, label, key, value):
-        if not self.driver:
-            raise Exception("Neo4j driver is not initialized.")
-        with self.get_driver_session() as session:
-            result = session.run(
-                f"MATCH (n:{label} {{{key}: $value}}) RETURN COUNT(n) > 0 AS exists",
-                value=value
-            )
-            return result.single()["exists"]
+    def value_exists(self, label: str, key: str, value: str) -> bool:
+        return self.get_db().value_exists(label, key, value)
