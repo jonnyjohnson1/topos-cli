@@ -253,7 +253,7 @@ class DebateSimulatorThink:
 
         message_history.append(message)
 
-        app_state.set_value(f"message_history_{session_id}", message_history)
+        app_state.set_state(f"message_history_{session_id}", message_history)
 
         # Create new Generation
         generation_nonce = self.generate_nonce()

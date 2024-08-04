@@ -379,7 +379,7 @@ class DebateSimulator:
 
         message_history.append(new_history_item)
 
-        app_state.set_value(f"message_history_{session_id}", message_history)
+        app_state.set_state(f"message_history_{session_id}", message_history)
 
         # Create new Generation
         generation_nonce = self.generate_nonce()
@@ -562,7 +562,7 @@ class DebateSimulator:
                     wepcc = wepcc_results[user_id][cluster_id]
                     cluster.update_wepcc(wepcc)
 
-        app_state.set_value(f"previous_clusters_{session_id}_{user_id}", clusters)
+        app_state.set_state(f"previous_clusters_{session_id}_{user_id}", clusters)
 
         # Check if there are enough clusters or users to perform argument matching
         if len(clusters) < 2:

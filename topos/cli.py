@@ -1,6 +1,8 @@
 #cli.py
 
 import argparse
+import os
+
 
 def main():
     parser = argparse.ArgumentParser(description="CLI for my script")
@@ -52,4 +54,5 @@ def main():
             print("Please specify Spacy model size using --spacy option.")
 
 if __name__ == "__main__":
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
     main()
