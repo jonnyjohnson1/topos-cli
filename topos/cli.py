@@ -11,17 +11,16 @@ def main():
     parser.add_argument('--cloud', action='store_true', help="Flag to run the server on cloud")
 
     args = parser.parse_args()
-    if args.command == 'cloud':
-        from .api import api
-        api.start_hosted_service()
     if args.command == 'run':
         """
         start the topos api server
         """
         # import api
         from .api import api
-        from .app import menu_bar_app
-        if args.web:
+        if args.cloud:
+            api.start_hosted_service()
+        elif args.web:
+            from .app import menu_bar_app
             api.start_web_api()
         else:
             menu_bar_app.start_app()
