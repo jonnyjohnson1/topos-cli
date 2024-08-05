@@ -2,7 +2,16 @@
 A simple api to use your local machine to play chat games over in the [chat arena](https://github.com/jonnyjohnson1/chat-arena).
 
 Game options are:
-1. Debate
+1. Debate  
+
+
+## Install with nix (Recommended)
+1. Install nix  
+    macos/linux: `sh <(curl -L https://nixos.org/nix/install)`  
+    windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`
+2. Download this repo `git clone https://github.com/jonnyjohnson1/topos-cli`
+3. `cd topos-cli`
+4. `nix-shell`
 
 ## Install Instructions
 requires `brew install just`
