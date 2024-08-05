@@ -8,9 +8,12 @@ def main():
     parser.add_argument('--web', action='store_true', help="Flag to run the server for web access")
     parser.add_argument('--local', action='store_true', help="Flag to run the server for local access (default)")
     parser.add_argument('--spacy', choices=['small', 'med', 'large', 'trf'], help="Specify Spacy model size (only for 'set' command)")
+    parser.add_argument('--cloud', action='store_true', help="Flag to run the server on cloud")
 
     args = parser.parse_args()
-
+    if args.command == 'cloud':
+        from .api import api
+        api.start_hosted_service()
     if args.command == 'run':
         """
         start the topos api server
