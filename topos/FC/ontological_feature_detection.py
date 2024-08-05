@@ -65,7 +65,14 @@ class OntologicalFeatureDetection:
         self.use_neo4j = use_neo4j
 
         # Initialize app state with Neo4j connection details
-        self.app_state = AppState(neo4j_uri, neo4j_user, neo4j_password, self.showroom_db_name, self.use_neo4j)
+        self.app_state = AppState(
+            db_type="neo4j",
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            neo4j_db_name=self.showroom_db_name,
+            use_neo4j=self.use_neo4j
+        )
 
     def perform_ner(self, text):
         doc = self.nlp(text)

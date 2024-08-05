@@ -101,8 +101,6 @@ ipython_config.py
 /_cache
 /_conv_cache
 
-.env
-topos/.env
 .DS_Store
 /topos/test/accounts.json
 chat_api_gcp/
