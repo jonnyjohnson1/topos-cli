@@ -3,8 +3,8 @@ from datetime import datetime
 import time
 
 from ..generations.ollama_chat import stream_chat
-from topos.FC.semantic_compression import SemanticCompression
-from ..config import get_openai_api_key
+# from topos.FC.semantic_compression import SemanticCompression
+# from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
 import json
 

@@ -6,7 +6,6 @@ import math
 
 # from dotenv import load_dotenv
 from openai import OpenAI
-from langchain_community.llms import Ollama
 from topos.FC.cache_manager import CacheManager
 from topos.FC.similitude_module import load_model, util
 

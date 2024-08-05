@@ -8,8 +8,6 @@ in pkgs.mkShell {
   buildInputs = [
     pkgs.just
     pkgs.poetry
-    pkgs.rustc
-    pkgs.cargo
   ];
 
   shellHook = ''
