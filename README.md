@@ -6,12 +6,17 @@ Game options are:
 
 
 ## Install with nix (Recommended)
-1. Install nix  
+1. Install nix:   
     macos/linux: `sh <(curl -L https://nixos.org/nix/install)`  
-    windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`
+    windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`  
 2. Download this repo `git clone https://github.com/jonnyjohnson1/topos-cli`
 3. `cd topos-cli`
-4. `nix-shell`
+4. build the backend service: `nix-shell`
+5. 
+```
+topos set --spacy trf // set this value. It only needs to be set once.
+topos run // start topos
+```
 
 ## Install Instructions
 requires `brew install just`

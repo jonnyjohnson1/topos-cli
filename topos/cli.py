@@ -21,9 +21,10 @@ def main():
             api.start_hosted_service()
         elif args.web:
             from .app import menu_bar_app
-            api.start_web_api()
+            menu_bar_app.start_web_app()
         else:
-            menu_bar_app.start_app()
+            from .app import menu_bar_app
+            menu_bar_app.start_local_app()
     
     if args.command == 'chat':
         """

@@ -3,7 +3,6 @@
 let
   python = pkgs.python3;
   
-
 in pkgs.mkShell {
   buildInputs = [
     pkgs.just
@@ -12,7 +11,6 @@ in pkgs.mkShell {
 
   shellHook = ''
     just build
-    topos set --spacy trf
     topos run
   '';
 }

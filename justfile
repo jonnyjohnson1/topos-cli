@@ -19,3 +19,6 @@ python:
 	# add ('topos/config.yaml', 'topos/')
 	pyinstaller main.spec
 	create-dmg 'dist/main' --overwrite
+
+dmg:
+    create-dmg topos.app --volicon "topos/assets/topos_blk_rounded.png" --icon "topos/assets/topos_blk_rounded.png"

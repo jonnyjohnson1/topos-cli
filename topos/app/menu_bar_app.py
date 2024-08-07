@@ -1,6 +1,7 @@
 from ..api import api
 from ..downloaders.spacy_loader import download_spacy_model
 from topos.utilities.utils import get_root_directory
+from ..config import get_ssl_certificates
 
 import requests
 import threading
@@ -10,18 +11,37 @@ import pystray
 import time
 import os
 
+import warnings
+
+ASSETS_PATH = os.path.join(get_root_directory(), "assets/topos_white.png")
 API_URL = "http://0.0.0.0:13341/health"
 DOCS_URL = "http://0.0.0.0:13341/docs"
-ASSETS_PATH = os.path.join(get_root_directory(), "assets/topos_white.png")
-
 
 def start_api():
     api.start_local_api()
 
+def start_web_app():
+    global API_URL, DOCS_URL
+    API_URL = "https://0.0.0.0:13341/health"
+    DOCS_URL = "https://0.0.0.0:13341/docs"
+    api_thread = threading.Thread(target=api.start_web_api)
+    api_thread.daemon = True
+    api_thread.start()
+    # Create and start the tray icon on the main thread
+    create_tray_icon()
+    
 def check_health(icon):
+    certs = get_ssl_certificates()
+    if not os.path.exists(certs['cert_path']):
+        print(f"Certificate file not found: {certs['cert_path']}")
+    if not os.path.exists(certs['key_path']):
+        print(f"Key file not found: {certs['key_path']}")
+    
     while icon.visible:
         try:
-            response = requests.get(API_URL)
+            with warnings.catch_warnings(): # cert=(certs['cert_path'], certs['key_path']) #for verification, but wasn't working
+                warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+                response = requests.get(API_URL, verify=False)
             if response.status_code == 200:
                 update_status(icon, "Service is running", (170, 255, 0, 255))
             else:
@@ -76,12 +96,19 @@ def on_exit(icon, item):
     icon.visible = False
     icon.stop()
 
-def start_app():
-# if __name__ == "__main__":
-    # Start the API in a separate thread
-    api_thread = threading.Thread(target=start_api)
+def start_local_app():
+    api_thread = threading.Thread(target=api.start_local_api)
     api_thread.daemon = True
     api_thread.start()
+    # Create and start the tray icon on the main thread
+    create_tray_icon()
 
+def start_web_app():
+    global API_URL, DOCS_URL
+    API_URL = "https://0.0.0.0:13341/health"
+    DOCS_URL = "https://0.0.0.0:13341/docs"
+    api_thread = threading.Thread(target=api.start_web_api)
+    api_thread.daemon = True
+    api_thread.start()
     # Create and start the tray icon on the main thread
     create_tray_icon()
