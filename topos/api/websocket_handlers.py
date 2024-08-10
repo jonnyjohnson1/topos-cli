@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from datetime import datetime
 import time
 import traceback
+import pprint
 
 from ..generations.ollama_chat import stream_chat
 # from topos.FC.semantic_compression import SemanticCompression
@@ -11,21 +12,40 @@ import json
 
 from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
+from ..services.loggers.process_logger import ProcessLogger
 from ..services.ontology_service.mermaid_chart import get_mermaid_chart
+
 # cache database
 from topos.FC.conversation_cache_manager import ConversationCacheManager
 
 # Debate simulator
 from topos.channel.debatesim import DebateSimulator
 
-
 router = APIRouter()
 debate_simulator = DebateSimulator.get_instance()
 
+async def end_ws_process(websocket, websocket_process, process_logger, send_json, write_logs=True):
+    await process_logger.end(websocket_process)
+    if write_logs:
+        logs = process_logger.get_logs()
+        pprint.pp(logs)
+        # for step_name, log_data in logs.items():
+        #     details = '|'.join([f"{key}={value}" for key, value in log_data.get("details", {}).items()])
+        #     log_message = (
+        #         f"{step_name},{process_logger.step_id},"
+        #         f"{log_data['start_time']},{log_data.get('end_time', '')},"
+        #         f"{log_data.get('elapsed_time', '')},{details}"
+        #     )
+            # await process_logger.log(log_message) # available when logger client is made
+    await websocket.send_json(send_json)
+    return
 
 @router.websocket("/websocket_chat")
 async def chat(websocket: WebSocket):
     await websocket.accept()
+    process_logger = ProcessLogger(verbose=False, run_logger=False)
+    websocket_process = "Processing /websocket_chat"
+    await process_logger.start(websocket_process)
     try:
         while True:
             data = await websocket.receive_text()
@@ -80,30 +100,34 @@ async def chat(websocket: WebSocket):
                     simplified_message['images'] = message['images']
                 simp_msg_history.append(simplified_message)
             
-
             last_message = simp_msg_history[-1]['content']
             role = simp_msg_history[-1]['role']
             # Fetch base, per-message token classifiers
             if config['calculateInMessageNER']:
+                await process_logger.start("calculateInMessageNER-user")
                 start_time = time.time()
                 base_analysis = base_token_classifier(last_message)  # this is only an ner dict atm
                 duration = time.time() - start_time
+                await process_logger.end("calculateInMessageNER-user")
                 print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
             
             # Fetch base, per-message text classifiers
             # Start timer for base_text_classifier
             if config['calculateModerationTags']:
+                await process_logger.start("calculateModerationTags-user")
                 start_time = time.time()
                 text_classifiers = {}
                 try:
                     text_classifiers = base_text_classifier(last_message)
                 except Exception as e:
-                    logging.error(f"Failed to compute base_text_classifier: {cache_path}: {e}")
+                    print(f"Failed to compute base_text_classifier: {e}")
                 duration = time.time() - start_time
+                await process_logger.end("calculateModerationTags-user")
                 print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
             
             conv_cache_manager = ConversationCacheManager()
             if config['calculateModerationTags'] or config['calculateInMessageNER']:
+                await process_logger.start("saveToConversationCache-user")
                 print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
                 try:
                     dummy_data = {
@@ -126,9 +150,11 @@ async def chat(websocket: WebSocket):
                     dummy_data[message_id].pop('message', None)
                     dummy_data[message_id].pop('timestamp', None)
                 # Sending first batch of user message analysis back to the UI
+                await process_logger.end("saveToConversationCache-user")
                 await websocket.send_json({"status": "fetched_user_analysis", 'user_message': dummy_data})
             else:
                 print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
+                await process_logger.start("saveToConversationCache-user")
                 # Saving an empty dictionary for the messag id
                 conv_cache_manager.save_to_cache(conversation_id, {
                     message_id : 
@@ -137,32 +163,53 @@ async def chat(websocket: WebSocket):
                         'message': last_message, 
                         'timestamp': datetime.now(), 
                     }})
+                await process_logger.end("saveToConversationCache-user")
 
             # Processing the chat
             output_combined = ""
+            is_first_token = True
+            total_tokens = 0  # Initialize token counter
+            start_time = time.time()  # Track the start time for the whole process
+            await process_logger.start("Retrieving LLM Generation", provider="ollama", model=model, len_msg_hist=len(simp_msg_history))
+            await process_logger.start("Time To First Token")
             for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
-                output_combined += chunk
-                await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
-            
+                if len(chunk) > 0:
+                    if is_first_token:
+                        await process_logger.end("Time To First Token")
+                        is_first_token = False
+                    output_combined += chunk
+                    total_tokens += len(chunk.split())
+                    await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
+            end_time = time.time()  # Capture the end time
+            elapsed_time = end_time - start_time  # Calculate the total elapsed time
+            # Calculate tokens per second
+            if elapsed_time > 0:
+                tokens_per_second = total_tokens / elapsed_time
+            await process_logger.end("Retrieving LLM Generation", toks_per_sec=f"{tokens_per_second:.1f}")
             # Fetch semantic category from the output
             # semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
             # semantic_category = semantic_compression.fetch_semantic_category(output_combined)
 
             # Start timer for base_token_classifier
             if config['calculateInMessageNER']:
+                await process_logger.start("calculateInMessageNER-ChatBot")
                 start_time = time.time()
                 base_analysis = base_token_classifier(output_combined)
                 duration = time.time() - start_time
                 print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
+                await process_logger.end("calculateInMessageNER-ChatBot")
 
             # Start timer for base_text_classifier
             if config['calculateModerationTags']:
+                await process_logger.start("calculateModerationTags-ChatBot")
                 start_time = time.time()
                 text_classifiers = base_text_classifier(output_combined)
                 duration = time.time() - start_time
                 print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
+                await process_logger.end("calculateModerationTags-ChatBot")
 
             if config['calculateModerationTags'] or config['calculateInMessageNER']:
+                await process_logger.start("saveToConversationCache-ChatBot")
                 print(f"\t[ save to conv cache :: conversation {conversation_id}-{chatbot_msg_id} ]")
                 dummy_bot_data = {
                     chatbot_msg_id : 
@@ -180,9 +227,11 @@ async def chat(websocket: WebSocket):
                 if chatbot_msg_id in dummy_bot_data:
                     dummy_bot_data[chatbot_msg_id].pop('message', None)
                     dummy_bot_data[chatbot_msg_id].pop('timestamp', None)
+                await process_logger.end("saveToConversationCache-ChatBot")
             else:
                 # Saving an empty dictionary for the messag id
                 print(f"\t[ save to conv cache :: conversation {conversation_id}-{chatbot_msg_id} ]")
+                await process_logger.start("saveToConversationCache-ChatBot")
                 conv_cache_manager.save_to_cache(conversation_id, {
                     chatbot_msg_id : 
                         {
@@ -190,6 +239,7 @@ async def chat(websocket: WebSocket):
                         'message': output_combined, 
                         'timestamp': datetime.now(), 
                     }})
+                await process_logger.end("saveToConversationCache-ChatBot")
             
             # Send the final completed message
             send_pkg = {"status": "completed", "response": output_combined, "completed": True}
@@ -198,11 +248,11 @@ async def chat(websocket: WebSocket):
                 send_pkg['bot_data'] = dummy_bot_data
                 
             await websocket.send_json(send_pkg)
+            await end_ws_process(websocket, websocket_process, process_logger, send_pkg)
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
     except Exception as e:
-        stack_trace = traceback.format_exc()
         await websocket.send_json({"status": "error", "message": str(e)})
         await websocket.close()
 

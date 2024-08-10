@@ -4,19 +4,21 @@ A simple api to use your local machine to play chat games over in the [chat aren
 Game options are:
 1. Debate  
 
-
 ## Install with nix (Recommended)
+If nix is not installed:
 1. Install nix:   
     macos/linux: `sh <(curl -L https://nixos.org/nix/install)`  
-    windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`  
-2. Download this repo `git clone https://github.com/jonnyjohnson1/topos-cli`
-3. `cd topos-cli`
-4. build the backend service: `nix-shell`
-5. 
+    windows: `sh <(curl -L https://nixos.org/nix/install) --daemon` 
+Run the software with nix:
+1. Download this repo `git clone https://github.com/jonnyjohnson1/topos-cli`
+2. `cd topos-cli`
+3. build the backend service (only run the topos set --spacy trf line if it is your first time setting up)
 ```
-topos set --spacy trf // set this value. It only needs to be set once.
-topos run // start topos
+nix-shell
+topos set --spacy trf
+topos run
 ```
+
 
 ## Install Instructions
 requires `brew install just`
