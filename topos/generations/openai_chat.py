@@ -1,18 +1,17 @@
-# ollama_chat.py
+# openai_chat.py
 
 from openai import OpenAI
-
 from typing import List, Dict, Generator
 from topos.generations.chat_model import ChatModel
 
 
-class OllamaChatModel(ChatModel):
-    def __init__(self, model_name: str):
+class OpenAIChatModel(ChatModel):
+
+    def __init__(self, model_name: str, api_key: str):
+        super().__init__(model_name, api_key)
         self.client = OpenAI(
-            base_url='http://localhost:11434/v1',
-            api_key='ollama',  # required, but unused
+            api_key=self.api_key
         )
-        super().__init__(model_name, "unused")
 
     def stream_chat(self, message_history: List[Dict[str, str]], temperature: float = 0) -> Generator[str, None, None]:
         try:
@@ -38,8 +37,7 @@ class OllamaChatModel(ChatModel):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
-                temperature=temperature,
-                stream=False
+                temperature=temperature
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -51,8 +49,7 @@ class OllamaChatModel(ChatModel):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=message_history,
-                temperature=temperature,
-                stream=False
+                temperature=temperature
             )
             return response.choices[0].message.content
         except Exception as e:
