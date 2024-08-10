@@ -192,7 +192,7 @@ async def chat(websocket: WebSocket):
                     }})
             
             # Send the final completed message
-            send_pkg = {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True}
+            send_pkg = {"status": "completed", "response": output_combined, "completed": True}
             if config['calculateModerationTags'] or config['calculateInMessageNER']:
                 send_pkg['user_message'] = dummy_data
                 send_pkg['bot_data'] = dummy_bot_data
