@@ -10,6 +10,8 @@
 /topos/test/_conv_cache/*
 !/topos/test/_conv_cache/.gitignore
 
+# cert files
+*.pem
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -99,7 +101,14 @@ ipython_config.py
 /_cache
 /_conv_cache
 
-/.env
 .DS_Store
 /topos/test/accounts.json
+/.env
 .env
+chat_api_gcp/
+topos/credentials.json
+topos/justfile
+topos/cloudbuild.yaml
+dockerfile
+
+topos.app

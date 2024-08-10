@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 import os
 from fastapi.middleware.cors import CORSMiddleware
+from topos.utilities.utils import get_root_directory
 
 
 def get_openai_api_key():
@@ -11,10 +12,13 @@ def get_openai_api_key():
 
 
 def get_ssl_certificates():
-    project_dir = "/Users/dialogues/developer/topos/cli"
+    # project_dir = get_root_directory()
+    # print(project_dir)
+    # "key_path": project_dir + "/key.pem",
+    # "cert_path": project_dir + "/cert.pem"
     return {
-        "key_path": project_dir + "/key.pem",
-        "cert_path": project_dir + "/cert.pem"
+        "key_path": "key.pem",
+        "cert_path": "cert.pem"
     }
 
 

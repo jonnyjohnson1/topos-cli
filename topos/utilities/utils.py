@@ -1,6 +1,17 @@
 import random
 # utils.py
 import os
+import shutil
+
+
+def get_python_command():
+    if shutil.which("python"):
+        return "python"
+    elif shutil.which("python3"):
+        return "python3"
+    else:
+        raise EnvironmentError("No Python interpreter found")
+
 
 def get_root_directory():
     # Get the current file's directory

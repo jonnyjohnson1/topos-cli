@@ -180,13 +180,15 @@ class TestDebateJWTFlow(unittest.IsolatedAsyncioTestCase):
                     if response["status"] == "wepcc_result":
                         self.assertIn("wepcc_result", response)
                         wepcc_result_received = True
+                        print("RESPONSE:\n", response)
 
                     if response["status"] == "final_results":
                         self.assertIn("results", response)
                         final_results_received = True
+                        print("RESPONSE:\n", response)
 
                 print(f"\t[ Messaged processed: {message['data']['content']} ]")
-
+                
         print("Test completed")
 
         # Verify that all expected responses were received

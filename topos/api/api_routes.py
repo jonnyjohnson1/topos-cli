@@ -1,8 +1,10 @@
 # api_routes.py
 
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 import requests
+import signal
 import tkinter as tk
 from tkinter import filedialog
 from topos.FC.conversation_cache_manager import ConversationCacheManager
@@ -13,10 +15,26 @@ from pydantic import BaseModel
 
 from ..generations.ollama_chat import generate_response
 from ..utilities.utils import create_conversation_string
+from ..services.ontology_service.mermaid_chart import get_mermaid_chart
 
 cache_manager = ConversationCacheManager()
 class ConversationIDRequest(BaseModel):
     conversation_id: str
+
+
+@router.post("/shutdown")
+def shutdown(request: Request):
+    os.kill(os.getpid(), signal.SIGTERM)
+    return JSONResponse(content={"message": "Server shutting down..."})
+
+
+@router.get("/health")
+async def health_check():
+    try:
+        # Perform any additional checks here if needed
+        return {"status": "healthy"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Health check failed: {e}")
 
 
 @router.post("/chat_conversation_analysis")
@@ -272,3 +290,44 @@ def read_file_as_bytes(file_path):
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
+    
+    
+class MermaidChartPayload(BaseModel):
+    message: str = None
+    conversation_id: str
+    full_conversation: bool = False
+    model: str = "dolphin-llama3"
+    temperature: float = 0.04
+
+@router.post("/generate_mermaid_chart")
+async def generate_mermaid_chart(payload: MermaidChartPayload):
+    try:
+        conversation_id = payload.conversation_id
+        full_conversation = payload.full_conversation
+        model = payload.model
+        temperature = payload.temperature
+
+        if full_conversation:
+            cache_manager = ConversationCacheManager()
+            conv_data = cache_manager.load_from_cache(conversation_id)
+            if conv_data is None:
+                raise HTTPException(status_code=404, detail="Conversation not found in cache")
+            print(f"\t[ generating mermaid chart :: using model {model} :: full conversation ]")
+            return {"status": "generating", "response": "generating mermaid chart", 'completed': False}
+            # TODO: Complete this branch if needed
+
+        else:
+            message = payload.message
+            if message:
+                print(f"\t[ generating mermaid chart :: using model {model} ]")
+                try:
+                    mermaid_string = await get_mermaid_chart(message)
+                    if mermaid_string == "Failed to generate mermaid":
+                        return {"status": "error", "response": mermaid_string, 'completed': True}
+                    else:
+                        return {"status": "completed", "response": mermaid_string, 'completed': True}
+                except Exception as e:
+                    return {"status": "error", "response": f"Error: {e}", 'completed': True}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

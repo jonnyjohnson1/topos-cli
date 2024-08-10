@@ -12,4 +12,13 @@ zrok_chat:
     zrok share public http://0.0.0.0:13394
 
 cert:
-    openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365
+    openssl req -x509 -newkey rsa:4096 -nodes -out topos/cert.pem -keyout topos/key.pem -days 365
+
+python:
+	pyi-makespec --onefile main.py
+	# add ('topos/config.yaml', 'topos/')
+	pyinstaller main.spec
+	create-dmg 'dist/main' --overwrite
+
+dmg:
+    create-dmg topos.app --volicon "topos/assets/topos_blk_rounded.png" --icon "topos/assets/topos_blk_rounded.png"

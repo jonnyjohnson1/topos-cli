@@ -4,14 +4,14 @@ import time
 import traceback
 
 from ..generations.ollama_chat import stream_chat
-from topos.FC.semantic_compression import SemanticCompression
-from ..config import get_openai_api_key
+# from topos.FC.semantic_compression import SemanticCompression
+# from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
 import json
 
 from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
-
+from ..services.ontology_service.mermaid_chart import get_mermaid_chart
 # cache database
 from topos.FC.conversation_cache_manager import ConversationCacheManager
 
@@ -59,7 +59,7 @@ async def chat(websocket: WebSocket):
                 has_topic = True
                 prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is {current_topic}.\n"
 
-            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator. The current topic is unknown, so try not to make any judgements thus far - only re-express the input words in your own style:"
+            system_prompt = f"You are a smooth talking, eloquent, poignant, insightful AI moderator."
             user_prompt = ""
             if message_history:
                 # Add the message history prior to the message
@@ -143,10 +143,10 @@ async def chat(websocket: WebSocket):
             for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
                 output_combined += chunk
                 await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
-
+            
             # Fetch semantic category from the output
-            semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
-            semantic_category = (semantic_compression.fetch_semantic_category(output_combined)).content
+            # semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
+            # semantic_category = semantic_compression.fetch_semantic_category(output_combined)
 
             # Start timer for base_token_classifier
             if config['calculateInMessageNER']:
@@ -190,7 +190,7 @@ async def chat(websocket: WebSocket):
                         'message': output_combined, 
                         'timestamp': datetime.now(), 
                     }})
-
+            
             # Send the final completed message
             send_pkg = {"status": "completed", "response": output_combined, "semantic_category": semantic_category, "completed": True}
             if config['calculateModerationTags'] or config['calculateInMessageNER']:
@@ -328,3 +328,80 @@ async def meta_chat(websocket: WebSocket):
         await websocket.send_json({"status": "error", "message": str(e)})
         await websocket.close()
 
+@router.websocket("/websocket_mermaid_chart")
+async def meta_chat(websocket: WebSocket):
+    """
+
+    Generates a mermaid chart from a list of message.
+    
+    """
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            message = payload.get("message", None)
+            conversation_id = payload["conversation_id"]
+            full_conversation = payload.get("full_conversation", False)
+            model = payload.get("model", "dolphin-llama3")
+            temperature = float(payload.get("temperature", 0.04))
+
+            # load conversation
+            if full_conversation:
+                cache_manager = ConversationCacheManager()
+                conv_data = cache_manager.load_from_cache(conversation_id)
+                if conv_data is None:
+                    raise HTTPException(status_code=404, detail="Conversation not found in cache")
+                print(f"\t[ generating mermaid chart :: using model {model} :: full conversation ]")
+                await websocket.send_json({"status": "generating", "response": "generating mermaid chart", 'completed': False})
+                context = create_conversation_string(conv_data, 12)
+                # TODO Coomplete this branch
+            else:
+                if message:
+                    print(f"\t[ generating mermaid chart :: using model {model} ]")
+                    await websocket.send_json({"status": "generating", "response": "generating mermaid chart", 'completed': False})
+                    try:
+                        mermaid_string = await get_mermaid_chart(message, websocket = websocket)
+                        if mermaid_string == "Failed to generate mermaid":
+                            await websocket.send_json({"status": "error", "response": mermaid_string, 'completed': True})
+                        else:
+                            await websocket.send_json({"status": "completed", "response": mermaid_string, 'completed': True})
+                    except Exception as e:
+                        await websocket.send_json({"status": "error", "response": f"Error: {e}", 'completed': True})
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+    except Exception as e:
+        await websocket.send_json({"status": "error", "message": str(e)})
+        await websocket.close()
+    finally:
+        await websocket.close()
+
+
+
+
+@router.websocket("/debate_flow_with_jwt")
+async def debate_flow_with_jwt(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            message_data = payload.get("message_data", None)
+            model = payload.get("model", None)
+            
+            if message_data:
+                await websocket.send_json({"status": "generating", "response": "starting debate flow analysis", 'completed': False})
+                try:
+                    # Assuming DebateSimulator is correctly set up
+                    debate_simulator = await DebateSimulator.get_instance()
+                    response_data = debate_simulator.process_messages(message_data, model)
+                    await websocket.send_json({"status": "completed", "response": response_data, 'completed': True})
+                except Exception as e:
+                    await websocket.send_json({"status": "error", "response": f"Error: {e}", 'completed': True})
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+    except Exception as e:
+        await websocket.send_json({"status": "error", "message": str(e)})
+        await websocket.close()
+    finally:
+        await websocket.close()
