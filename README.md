@@ -8,7 +8,9 @@
 ---  
 
 # Topos
-A simple server running on your machine to power private conversations with friends, family, and coworkers. Runs with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
+A personal intelligence service, using your own computer to power private conversations with friends, family, and coworkers, collect/store your own private data, and use AI privately. Runs  great with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
+
+Tech: ollama, postgres, FastAPI, nixOS, huggingface-transformers
 
 ## (MacOS) Easy Install With .dmg
 *(Experimental)*: This is new, and should work on most MacOS machines!
@@ -29,7 +31,6 @@ nix-shell
 topos set --spacy trf
 topos run
 ```
-
 
 ## Install Instructions
 requires `brew install just`
