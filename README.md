@@ -4,7 +4,9 @@
 <p align="center">
   <em>Private AI Backend Service</em>
 </p>
----
+
+---  
+
 # Topos
 A simple server running on your machine to use your local machine to power private conversations with friends, family, and coworkers. Runs with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
 
