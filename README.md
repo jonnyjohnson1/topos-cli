@@ -1,8 +1,12 @@
-# Topos
-A simple api to use your local machine to play chat games over in the [chat arena](https://github.com/jonnyjohnson1/chat-arena).
+<p align="center">
+  <img src="https://github.com/jonnyjohnson1/topos-cli/blob/main/topos/assets/topos_blk_rounded.png" style="max-width: 100%; height: auto; max-height: 350px;" alt="Private LLMs" />
+</p>
+<p align="center">
+  <em>Private AI Backend Service</em>
+</p>
 
-Game options are:
-1. Debate  
+# Topos
+A simple server running on your machine to use your local machine to power private conversations with friends, family, and coworkers. Runs with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
 
 ## Install with nix (Recommended)
 If nix is not installed:
