@@ -1,13 +1,18 @@
 # Topos
 
 <p align="center">
-  <img src="https://github.com/jonnyjohnson1/topos-cli/blob/main/topos/assets/topos_blk_rounded.png" style="max-width: 100%; height: 65; max-height: 65px;" alt="Private LLMs" />
+  <img src="https://github.com/jonnyjohnson1/topos-cli/blob/main/topos/assets/topos_blk_rounded.png" style="width: 70px; height: 70px;" alt="Private LLMs" />
 </p>
 <p align="center">
   <em>Private AI Backend Service</em>
 </p>
 
 A simple server running on your machine to use your local machine to power private conversations with friends, family, and coworkers. Runs with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
+
+## (MacOS) Install App With .dmg
+*experimental*: This is new, and should work on most MacOS machines!
+Simply double click the topos.dmg file, and drag the app into your Applications directory.
+You should be able to launch the Topos service anywhere from your machine.
 
 ## Install with nix (Recommended)
 If nix is not installed:
