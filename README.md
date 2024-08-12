@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/jonnyjohnson1/topos-cli/blob/main/topos/assets/topos_blk_rounded.png" style="max-width: 100%; height: auto; max-height: 150px;" alt="Private LLMs" />
+  <img src="https://github.com/jonnyjohnson1/topos-cli/blob/main/topos/assets/topos_blk_rounded.png" style="max-width: 100%; height: auto; max-height: 65px;" alt="Private LLMs" />
 </p>
 <p align="center">
   <em>Private AI Backend Service</em>
