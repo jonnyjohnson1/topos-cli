@@ -8,7 +8,7 @@
 ---  
 
 # Topos
-A simple server running on your machine to use your local machine to power private conversations with friends, family, and coworkers. Runs with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
+A simple server running on your machine to power private conversations with friends, family, and coworkers. Runs with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
 
 ## (MacOS) Easy Install With .dmg
 *(Experimental)*: This is new, and should work on most MacOS machines!
