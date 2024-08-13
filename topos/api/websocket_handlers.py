@@ -189,7 +189,8 @@ async def chat(websocket: WebSocket):
                 tokens_per_second = total_tokens / elapsed_time
             ttl_num_toks = 0
             for i in simp_msg_history:
-                ttl_num_toks += len(i['content'].split())
+                if isinstance(i['content'], str):
+                    ttl_num_toks += len(i['content'].split())
             await process_logger.end("llm_generation_stream_chat", toks_per_sec=f"{tokens_per_second:.1f}", ttfs=f"{ttfs}", num_toks=num_user_toks, ttl_num_toks=ttl_num_toks)
             # Fetch semantic category from the output
             # semantic_compression = SemanticCompression(model=f"ollama:{model}", api_key=get_openai_api_key())
