@@ -268,23 +268,37 @@ async def create_next_messages(request: ConversationTopicsRequest):
 
 
 @router.post("/list_models")
-async def list_models():
-     # model specifications
-    # TODO UPDATE SO ITS NOT HARDCODED
-    # TODO UPDATE THIS ONE!!!!
-    # model = request.model if request.model != None else "dolphin-llama3"
-    # provider = 'ollama' # defaults to ollama right now
-    # api_key = 'ollama'
+async def list_models(provider: str = 'ollama', api_key: str = 'ollama'):
+    # Define the URLs for different providers
+    
+    list_models_urls = {
+        'ollama': "http://localhost:11434/api/tags",
+        'openai': "https://api.openai.com/v1/models",
+        'groq': "https://api.groq.com/openai/v1/models"
+    }
+    
+    if provider not in list_models_urls:
+        raise HTTPException(status_code=400, detail="Unsupported provider")
 
-    # llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+    # Get the appropriate URL based on the provider
+    url = list_models_urls.get(provider.lower())
 
-    url = "http://localhost:11434/api/tags"
+    if provider.lower() == 'ollama':
+        # No need for headers with Ollama
+        headers = {}
+    else:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
     try:
-        result = requests.get(url)
+        # Make the request with the appropriate headers
+        result = requests.get(url, headers=headers)
         if result.status_code == 200:
             return {"result": result.json()}
         else:
-            raise HTTPException(status_code=404, detail="Models not found")
+            raise HTTPException(status_code=result.status_code, detail="Models not found")
     except requests.ConnectionError:
         raise HTTPException(status_code=500, detail="Server connection error")
 
