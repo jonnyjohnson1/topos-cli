@@ -13,9 +13,9 @@ router = APIRouter()
 from collections import Counter, OrderedDict, defaultdict
 from pydantic import BaseModel
 
-from ..generations.ollama_chat import generate_response
+from ..generations.chat_gens import LLMChatGens
 from ..utilities.utils import create_conversation_string
-from ..services.ontology_service.mermaid_chart import get_mermaid_chart
+from ..services.ontology_service.mermaid_chart import MermaidCreator
 
 cache_manager = ConversationCacheManager()
 class ConversationIDRequest(BaseModel):
@@ -129,16 +129,23 @@ async def conv_to_image(request: ConversationIDRequest):
     if conv_data is None:
         raise HTTPException(status_code=404, detail="Conversation not found in cache")
 
-   
+    
+    # model specifications
+    # TODO UPDATE SO ITS NOT HARDCODED
     model = "dolphin-llama3"
+    provider = 'ollama' # defaults to ollama right now
+    api_key = 'ollama'
+
+    llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
     context = create_conversation_string(conv_data, 6)
     print(context)
     print(f"\t[ converting conversation to image to text prompt: using model {model}]")
     conv_to_text_img_prompt = "Create an interesting, and compelling image-to-text prompt that can be used in a diffussor model. Be concise and convey more with the use of metaphor. Steer the image style towards Slavador Dali's fantastic, atmospheric, heroesque paintings that appeal to everyman themes."
-    txt_to_img_prompt = generate_response(context, conv_to_text_img_prompt, model=model, temperature=0)
+    txt_to_img_prompt = llm_client.generate_response(context, conv_to_text_img_prompt, temperature=0)
     # print(txt_to_img_prompt)
     print(f"\t[ generating a file name {model} ]")
-    txt_to_img_filename = generate_response(txt_to_img_prompt, "Based on the context create an appropriate, and BRIEF, filename with no spaces. Do not use any file extensions in your name, that will be added in a later step.", model=model, temperature=0)
+    txt_to_img_filename = llm_client.generate_response(txt_to_img_prompt, "Based on the context create an appropriate, and BRIEF, filename with no spaces. Do not use any file extensions in your name, that will be added in a later step.", temperature=0)
 
     # run huggingface comic diffusion
     pipeline = DiffusionPipeline.from_pretrained("ogkalu/Comic-Diffusion")
@@ -180,7 +187,15 @@ class GenNextMessageOptions(BaseModel):
 async def create_next_messages(request: GenNextMessageOptions):
     conversation_id = request.conversation_id
     query = request.query
+    
+    # model specifications
+    # TODO UPDATE SO ITS NOT HARDCODED
     model = request.model if request.model != None else "dolphin-llama3"
+    provider = 'ollama' # defaults to ollama right now
+    api_key = 'ollama'
+
+    llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
     voice_settings = request.voice_settings  if request.voice_settings != None else """{
     "tone": "analytical",
     "distance": "distant",
@@ -211,7 +226,7 @@ Generate options based on these parameters.
     system_prompt += conv_json
 
 
-    next_message_options = generate_response(system_prompt, query, model=model, temperature=0)
+    next_message_options = llm_client.generate_response(system_prompt, query, temperature=0)
     print(next_message_options)
     
     # return the options
@@ -225,7 +240,13 @@ class ConversationTopicsRequest(BaseModel):
 @router.post("/gen_conversation_topics")
 async def create_next_messages(request: ConversationTopicsRequest):
     conversation_id = request.conversation_id
+    # model specifications
+    # TODO UPDATE SO ITS NOT HARDCODED
     model = request.model if request.model != None else "dolphin-llama3"
+    provider = 'ollama' # defaults to ollama right now
+    api_key = 'ollama'
+
+    llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
 
     # load conversation
     conv_data = cache_manager.load_from_cache(conversation_id)
@@ -233,13 +254,13 @@ async def create_next_messages(request: ConversationTopicsRequest):
         raise HTTPException(status_code=404, detail="Conversation not found in cache")
 
     context = create_conversation_string(conv_data, 12)
-    print(f"\t[ generating summary :: model {model} :: subject {subject}]")
+    # print(f"\t[ generating summary :: model {model} :: subject {subject}]")
 
     query = f""
     # topic list first pass
     system_prompt = "PRESENT CONVERSATION:\n-------<context>" + context + "\n-------\n"
     query += """List the topics and those closely related to what this conversation traverses."""
-    topic_list = generate_response(system_prompt, query, model=model, temperature=0)
+    topic_list = llm_client.generate_response(system_prompt, query, temperature=0)
     print(topic_list)
 
     # return the image
@@ -248,6 +269,15 @@ async def create_next_messages(request: ConversationTopicsRequest):
 
 @router.post("/list_models")
 async def list_models():
+     # model specifications
+    # TODO UPDATE SO ITS NOT HARDCODED
+    # TODO UPDATE THIS ONE!!!!
+    # model = request.model if request.model != None else "dolphin-llama3"
+    # provider = 'ollama' # defaults to ollama right now
+    # api_key = 'ollama'
+
+    # llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
     url = "http://localhost:11434/api/tags"
     try:
         result = requests.get(url)
@@ -304,8 +334,17 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
     try:
         conversation_id = payload.conversation_id
         full_conversation = payload.full_conversation
+        # model specifications
         model = payload.model
+        provider = payload.get('provider', 'ollama') # defaults to ollama right now
+        api_key = payload.get('api_key', 'ollama')
         temperature = payload.temperature
+
+        llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
+        mermaid_generator = MermaidCreator(llm_client)
+       
+        
 
         if full_conversation:
             cache_manager = ConversationCacheManager()
@@ -321,7 +360,7 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
             if message:
                 print(f"\t[ generating mermaid chart :: using model {model} ]")
                 try:
-                    mermaid_string = await get_mermaid_chart(message)
+                    mermaid_string = await mermaid_generator.get_mermaid_chart(message)
                     if mermaid_string == "Failed to generate mermaid":
                         return {"status": "error", "response": mermaid_string, 'completed': True}
                     else:
