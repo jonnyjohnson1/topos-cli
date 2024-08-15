@@ -1,10 +1,10 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from datetime import datetime
 import time
 import traceback
 import pprint
 
-from ..generations.ollama_chat import stream_chat
+from ..generations.chat_gens import LLMChatGens
 # from topos.FC.semantic_compression import SemanticCompression
 # from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
@@ -13,7 +13,7 @@ import json
 from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
 from ..services.loggers.process_logger import ProcessLogger
-from ..services.ontology_service.mermaid_chart import get_mermaid_chart
+from ..services.ontology_service.mermaid_chart import MermaidCreator
 
 # cache database
 from topos.FC.conversation_cache_manager import ConversationCacheManager
@@ -55,11 +55,11 @@ async def chat(websocket: WebSocket):
             chatbot_msg_id = payload["chatbot_msg_id"]
             message = payload["message"]
             message_history = payload["message_history"]
-            model = payload.get("model", "solar")
             temperature = float(payload.get("temperature", 0.04))
             current_topic = payload.get("topic", "Unknown")
             processing_config = payload.get("processing_config", {})
-
+            
+           
             # Set default values if any key is missing or if processing_config is None
             default_config = {
                 "showInMessageNER": True,
@@ -68,6 +68,14 @@ async def chat(websocket: WebSocket):
                 "calculateModerationTags": True,
                 "showSidebarBaseAnalytics": True
             }
+            
+            # model specifications
+            model = payload.get("model", "solar")
+            provider = payload.get('provider', 'ollama') # defaults to ollama right now
+            api_key = payload.get('api_key', 'ollama')
+
+            llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
 
             # Update default_config with provided processing_config, if any
             config = {**default_config, **processing_config}
@@ -171,9 +179,9 @@ async def chat(websocket: WebSocket):
             is_first_token = True
             total_tokens = 0  # Initialize token counter
             ttfs = 0 # init time to first token value
-            await process_logger.start("llm_generation_stream_chat", provider="ollama", model=model, len_msg_hist=len(simp_msg_history))
+            await process_logger.start("llm_generation_stream_chat", provider=provider, model=model, len_msg_hist=len(simp_msg_history))
             start_time = time.time()  # Track the start time for the whole process
-            for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
+            for chunk in llm_client.stream_chat(simp_msg_history, temperature=temperature):
                 if len(chunk) > 0:
                     if is_first_token:
                         ttfs_end_time = time.time()
@@ -283,6 +291,14 @@ async def meta_chat(websocket: WebSocket):
             temperature = float(payload.get("temperature", 0.04))
             current_topic = payload.get("topic", "Unknown")
 
+            
+            # model specifications
+            model = payload.get("model", "solar")
+            provider = payload.get('provider', 'ollama') # defaults to ollama right now
+            api_key = payload.get('api_key', 'ollama')
+
+            llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
             # Set system prompt
             system_prompt = f"""You are a highly skilled conversationalist, adept at communicating strategies and tactics. Help the user navigate their current conversation to determine what to say next. 
             You possess a private, unmentioned expertise: PhDs in CBT and DBT, an elegant, smart, provocative speech style, extensive world travel, and deep literary theory knowledge à la Terry Eagleton. Demonstrate your expertise through your guidance, without directly stating it."""
@@ -308,7 +324,7 @@ async def meta_chat(websocket: WebSocket):
 
             # Processing the chat
             output_combined = ""
-            for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
+            for chunk in llm_client.stream_chat(simp_msg_history, temperature=temperature):
                 try:
                     output_combined += chunk
                     await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
@@ -342,8 +358,15 @@ async def meta_chat(websocket: WebSocket):
             
             conversation_id = payload["conversation_id"]
             subject = payload.get("subject", "knowledge")
-            model = payload.get("model", "solar")
             temperature = float(payload.get("temperature", 0.04))
+            
+            # model specifications
+            model = payload.get("model", "solar")
+            provider = payload.get('provider', 'ollama') # defaults to ollama right now
+            api_key = payload.get('api_key', 'ollama')
+
+            llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
 
             # load conversation
             cache_manager = ConversationCacheManager()
@@ -367,7 +390,7 @@ async def meta_chat(websocket: WebSocket):
 
             # Processing the chat
             output_combined = ""
-            for chunk in stream_chat(msg_history, model=model, temperature=temperature):
+            for chunk in llm_client.stream_chat(msg_history, temperature=temperature):
                 try:
                     output_combined += chunk
                     await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
@@ -400,9 +423,15 @@ async def meta_chat(websocket: WebSocket):
             message = payload.get("message", None)
             conversation_id = payload["conversation_id"]
             full_conversation = payload.get("full_conversation", False)
+            # model specifications
             model = payload.get("model", "dolphin-llama3")
+            provider = payload.get('provider', 'ollama') # defaults to ollama right now
+            api_key = payload.get('api_key', 'ollama')
             temperature = float(payload.get("temperature", 0.04))
 
+            llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
+            mermaid_generator = MermaidCreator(llm_client)
             # load conversation
             if full_conversation:
                 cache_manager = ConversationCacheManager()
@@ -412,13 +441,13 @@ async def meta_chat(websocket: WebSocket):
                 print(f"\t[ generating mermaid chart :: using model {model} :: full conversation ]")
                 await websocket.send_json({"status": "generating", "response": "generating mermaid chart", 'completed': False})
                 context = create_conversation_string(conv_data, 12)
-                # TODO Coomplete this branch
+                # TODO Complete this branch
             else:
                 if message:
                     print(f"\t[ generating mermaid chart :: using model {model} ]")
                     await websocket.send_json({"status": "generating", "response": "generating mermaid chart", 'completed': False})
                     try:
-                        mermaid_string = await get_mermaid_chart(message, websocket = websocket)
+                        mermaid_string = await mermaid_generator.get_mermaid_chart(message, websocket = websocket)
                         if mermaid_string == "Failed to generate mermaid":
                             await websocket.send_json({"status": "error", "response": mermaid_string, 'completed': True})
                         else:

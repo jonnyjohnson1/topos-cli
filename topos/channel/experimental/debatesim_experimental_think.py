@@ -29,7 +29,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from ..FC.argument_detection import ArgumentDetection
 from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
-from ..generations.ollama_chat import stream_chat
+from ..generations.chat_gens import LLMChatGens
 from ..services.database.app_state import AppState
 from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
@@ -338,7 +338,14 @@ class DebateSimulatorThink:
             user_id = app_state.get_value("user_id", "")
 
         message_history = payload["message_history"]
+        
+        # model specifications
         model = payload.get("model", "solar")
+        provider = payload.get('provider', 'ollama') # defaults to ollama right now
+        api_key = payload.get('api_key', 'ollama')
+
+        llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+
         temperature = float(payload.get("temperature", 0.04))
         current_topic = payload.get("topic", "Unknown")
 
@@ -456,7 +463,7 @@ class DebateSimulatorThink:
 
         # Processing the chat
         output_combined = ""
-        for chunk in stream_chat(simp_msg_history, model=model, temperature=temperature):
+        for chunk in llm_client.stream_chat(simp_msg_history, model=model, temperature=temperature):
             output_combined += chunk
             await websocket.send_json({"status": "generating", "response": output_combined, 'completed': False})
 

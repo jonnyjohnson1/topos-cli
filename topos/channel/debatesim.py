@@ -33,7 +33,6 @@ from fastapi import WebSocket, WebSocketDisconnect
 from ..FC.argument_detection import ArgumentDetection
 from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
-from ..generations.ollama_chat import stream_chat
 from ..services.database.app_state import AppState
 from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
