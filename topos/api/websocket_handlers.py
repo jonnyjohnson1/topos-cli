@@ -38,7 +38,6 @@ async def end_ws_process(websocket, websocket_process, process_logger, send_json
         #     )
             # await process_logger.log(log_message) # available when logger client is made
     await websocket.send_json(send_json)
-    return
 
 @router.websocket("/websocket_chat")
 async def chat(websocket: WebSocket):
@@ -261,8 +260,7 @@ async def chat(websocket: WebSocket):
             if config['calculateModerationTags'] or config['calculateInMessageNER']:
                 send_pkg['user_message'] = dummy_data
                 send_pkg['bot_data'] = dummy_bot_data
-                
-            await websocket.send_json(send_pkg)
+            
             await end_ws_process(websocket, websocket_process, process_logger, send_pkg)
 
     except WebSocketDisconnect:

@@ -28,6 +28,6 @@ tell application "Terminal"
         echo 'Nix installation complete.'; \
     else \
         echo 'Nix is already installed.'; \
-    fi && nix-shell"
+    fi && nix-shell --run '$SHELL'"
 end tell
 EOF
