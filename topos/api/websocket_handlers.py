@@ -4,7 +4,7 @@ import time
 import traceback
 import pprint
 
-from ..generations.chat_gens import LLMChatGens
+from ..generations.chat_gens import LLMController
 # from topos.FC.semantic_compression import SemanticCompression
 # from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
@@ -49,6 +49,7 @@ async def chat(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
+            print(payload)
             conversation_id = payload["conversation_id"]
             message_id = payload["message_id"]
             chatbot_msg_id = payload["chatbot_msg_id"]
@@ -72,8 +73,8 @@ async def chat(websocket: WebSocket):
             model = payload.get("model", "solar")
             provider = payload.get('provider', 'ollama') # defaults to ollama right now
             api_key = payload.get('api_key', 'ollama')
-
-            llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+            print("inputs", provider, api_key)
+            llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
 
             # Update default_config with provided processing_config, if any
@@ -289,13 +290,14 @@ async def meta_chat(websocket: WebSocket):
             temperature = float(payload.get("temperature", 0.04))
             current_topic = payload.get("topic", "Unknown")
 
-            
             # model specifications
             model = payload.get("model", "solar")
             provider = payload.get('provider', 'ollama') # defaults to ollama right now
             api_key = payload.get('api_key', 'ollama')
+            print(provider,"/",model)
+            print(api_key)
 
-            llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+            llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
             # Set system prompt
             system_prompt = f"""You are a highly skilled conversationalist, adept at communicating strategies and tactics. Help the user navigate their current conversation to determine what to say next. 
@@ -363,7 +365,7 @@ async def meta_chat(websocket: WebSocket):
             provider = payload.get('provider', 'ollama') # defaults to ollama right now
             api_key = payload.get('api_key', 'ollama')
 
-            llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+            llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
 
             # load conversation
@@ -427,7 +429,7 @@ async def meta_chat(websocket: WebSocket):
             api_key = payload.get('api_key', 'ollama')
             temperature = float(payload.get("temperature", 0.04))
 
-            llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+            llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
             mermaid_generator = MermaidCreator(llm_client)
             # load conversation

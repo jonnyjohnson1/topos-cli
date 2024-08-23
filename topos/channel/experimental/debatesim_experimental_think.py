@@ -29,7 +29,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from ..FC.argument_detection import ArgumentDetection
 from ..config import get_openai_api_key
 from ..models.llm_classes import vision_models
-from ..generations.chat_gens import LLMChatGens
+from ..generations.chat_gens import LLMController
 from ..services.database.app_state import AppState
 from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
@@ -344,7 +344,7 @@ class DebateSimulatorThink:
         provider = payload.get('provider', 'ollama') # defaults to ollama right now
         api_key = payload.get('api_key', 'ollama')
 
-        llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+        llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
         temperature = float(payload.get("temperature", 0.04))
         current_topic = payload.get("topic", "Unknown")

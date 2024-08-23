@@ -13,7 +13,7 @@ router = APIRouter()
 from collections import Counter, OrderedDict, defaultdict
 from pydantic import BaseModel
 
-from ..generations.chat_gens import LLMChatGens
+from ..generations.chat_gens import LLMController
 from ..utilities.utils import create_conversation_string
 from ..services.ontology_service.mermaid_chart import MermaidCreator
 
@@ -136,7 +136,7 @@ async def conv_to_image(request: ConversationIDRequest):
     provider = 'ollama' # defaults to ollama right now
     api_key = 'ollama'
 
-    llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+    llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
     context = create_conversation_string(conv_data, 6)
     print(context)
@@ -180,6 +180,8 @@ async def conv_to_image(request: ConversationIDRequest):
 class GenNextMessageOptions(BaseModel):
     conversation_id: str
     query: str
+    provider: str
+    api_key: str
     model: str
     voice_settings: dict
 
@@ -187,14 +189,14 @@ class GenNextMessageOptions(BaseModel):
 async def create_next_messages(request: GenNextMessageOptions):
     conversation_id = request.conversation_id
     query = request.query
-    
+    print(request.provider, "/", request.model)
+    print(request.api_key)
     # model specifications
-    # TODO UPDATE SO ITS NOT HARDCODED
     model = request.model if request.model != None else "dolphin-llama3"
-    provider = 'ollama' # defaults to ollama right now
-    api_key = 'ollama'
+    provider = request.provider if request.provider != None else 'ollama' # defaults to ollama right now
+    api_key = request.api_key if request.api_key != None else 'ollama'
 
-    llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+    llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
     voice_settings = request.voice_settings  if request.voice_settings != None else """{
     "tone": "analytical",
@@ -246,7 +248,7 @@ async def create_next_messages(request: ConversationTopicsRequest):
     provider = 'ollama' # defaults to ollama right now
     api_key = 'ollama'
 
-    llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+    llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
     # load conversation
     conv_data = cache_manager.load_from_cache(conversation_id)
@@ -341,6 +343,8 @@ class MermaidChartPayload(BaseModel):
     conversation_id: str
     full_conversation: bool = False
     model: str = "dolphin-llama3"
+    provider: str = "ollama"
+    api_key: str = "ollama"
     temperature: float = 0.04
 
 @router.post("/generate_mermaid_chart")
@@ -350,11 +354,11 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
         full_conversation = payload.full_conversation
         # model specifications
         model = payload.model
-        provider = payload.get('provider', 'ollama') # defaults to ollama right now
-        api_key = payload.get('api_key', 'ollama')
+        provider = payload.provider# defaults to ollama right now
+        api_key = payload.api_key
         temperature = payload.temperature
-
-        llm_client = LLMChatGens(model_name=model, provider=provider, api_key=api_key)
+        
+        llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
         mermaid_generator = MermaidCreator(llm_client)
        
@@ -365,7 +369,7 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
             conv_data = cache_manager.load_from_cache(conversation_id)
             if conv_data is None:
                 raise HTTPException(status_code=404, detail="Conversation not found in cache")
-            print(f"\t[ generating mermaid chart :: using model {model} :: full conversation ]")
+            print(f"\t[ generating mermaid chart :: {provider}/{model} :: full conversation ]")
             return {"status": "generating", "response": "generating mermaid chart", 'completed': False}
             # TODO: Complete this branch if needed
 
@@ -375,6 +379,7 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
                 print(f"\t[ generating mermaid chart :: using model {model} ]")
                 try:
                     mermaid_string = await mermaid_generator.get_mermaid_chart(message)
+                    print(mermaid_string)
                     if mermaid_string == "Failed to generate mermaid":
                         return {"status": "error", "response": mermaid_string, 'completed': True}
                     else:
