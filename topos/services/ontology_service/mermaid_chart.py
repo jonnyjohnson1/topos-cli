@@ -2,11 +2,11 @@
 import re
 
 from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
-from topos.generations.chat_gens import LLMChatGens
+from topos.generations.chat_gens import LLMController
 
 class MermaidCreator:
-    def __init__(self, llmChatGens: LLMChatGens):
-        self.client = llmChatGens
+    def __init__(self, LLMController: LLMController):
+        self.client = LLMController
         
     def get_ontology_old_method(self, message):
         user_id = "jonny"
@@ -163,7 +163,7 @@ class MermaidCreator:
                 if websocket:
                     await websocket.send_json({"status": "generating", "response": f"generating mermaid_chart_from_triples :: try {attempt + 1}", 'completed': False})
             response = self.client.generate_response_messages(message_history)
-            mermaid_chart = self.client.extract_mermaid_chart(response)
+            mermaid_chart = self.extract_mermaid_chart(response)
             if mermaid_chart:
                 # refined_mermaid_chart = refine_mermaid_lines(mermaid_chart)
                 return mermaid_chart

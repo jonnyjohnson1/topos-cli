@@ -10,7 +10,7 @@ default_models = {
     "ollama": "dolphin-llama3"
     }
 
-class LLMChatGens:
+class LLMController:
     def __init__(self, model_name: str, provider: str, api_key: str):
         self.provier = provider
         self.api_key = api_key

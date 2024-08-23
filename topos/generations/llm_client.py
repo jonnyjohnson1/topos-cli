@@ -13,7 +13,7 @@ class LLMClient:
         self.provider = provider.lower()
         self.api_key = api_key
         self.client = self._init_client()
-        print(f"Init client:: {self.provider}")
+        print(f"Init client :: {self.provider}")
     
     def _init_client(self):
         if self.provider == "openai":
