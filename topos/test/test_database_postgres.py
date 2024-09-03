@@ -332,11 +332,47 @@ class TestPostgresDatabase(unittest.TestCase):
         loaded_data = cache_manager.load_from_cache(conv_id)
 
         self.assertIsNotNone(loaded_data)
-        self.assertEqual(loaded_data[conv_id], message_data)
+        self.assertIn(conv_id, loaded_data)
+
+        loaded_conv_data = loaded_data[conv_id]
+
+        # Check if all original messages are in the loaded data
+        for msg_id, msg_content in message_data.items():
+            self.assertIn(msg_id, loaded_conv_data)
+            self.assertEqual(loaded_conv_data[msg_id]['content'], msg_content['content'])
+            self.assertEqual(loaded_conv_data[msg_id]['timestamp'], msg_content['timestamp'])
+
+        # Check if the number of messages is the same
+        self.assertEqual(len(loaded_conv_data), len(message_data))
+
+        # Test adding more messages to existing conversation
+        additional_messages = {
+            "message3": {"content": "Test message 3", "timestamp": "2023-01-01T00:00:02"},
+            "message4": {"content": "Test message 4", "timestamp": "2023-01-01T00:00:03"}
+        }
+        message_data.update(additional_messages)
+        cache_manager.save_to_cache(conv_id, message_data)
+
+        # Load updated cache
+        updated_loaded_data = cache_manager.load_from_cache(conv_id)
+        updated_conv_data = updated_loaded_data[conv_id]
+
+        # Check if all messages (including new ones) are in the loaded data
+        for msg_id, msg_content in message_data.items():
+            self.assertIn(msg_id, updated_conv_data)
+            self.assertEqual(updated_conv_data[msg_id]['content'], msg_content['content'])
+            self.assertEqual(updated_conv_data[msg_id]['timestamp'], msg_content['timestamp'])
+
+        # Check if the number of messages is updated
+        self.assertEqual(len(updated_conv_data), len(message_data))
 
         # Clean up
         cache_manager.clear_cache()
-        os.rmdir(cache_dir)
+        import shutil
+        try:
+            shutil.rmtree(cache_dir)
+        except FileNotFoundError:
+            logging.warning(f"Cache directory {cache_dir} not found during cleanup")
 
     def test_conversation_cache_manager_postgres(self):
         logging.info("Running test_conversation_cache_manager_postgres")

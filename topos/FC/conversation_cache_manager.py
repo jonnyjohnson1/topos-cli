@@ -65,8 +65,7 @@ class ConversationCacheManager:
                     ordered_conversation = OrderedDict(
                         sorted(conversation_dict.items(), key=lambda item: item[1]['timestamp'])
                     )
-                    data[conv_id] = ordered_conversation
-                    return data
+                    return {conv_id: ordered_conversation}
             except Exception as e:
                 logging.error(f"Failed to load from cache {cache_path}: {e}")
                 return None
@@ -111,11 +110,9 @@ class ConversationCacheManager:
 
         # Extract the conversation dictionary from the existing data
         conversation_dict = existing_data.get(conv_id, {})
-        # Extract the new message_id and data
-        message_id, message_data = next(iter(new_data.items()))
 
         # Update the conversation dictionary with the new message data
-        conversation_dict[message_id] = message_data
+        conversation_dict.update(new_data)
 
         # Update the existing data with the updated conversation dictionary
         existing_data[conv_id] = conversation_dict
