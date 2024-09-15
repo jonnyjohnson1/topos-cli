@@ -69,7 +69,7 @@ async def chat(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
-            print(payload)
+            
             conversation_id = payload["conversation_id"]
             message_id = payload["message_id"]
             chatbot_msg_id = payload["chatbot_msg_id"]
@@ -93,7 +93,7 @@ async def chat(websocket: WebSocket):
             model = payload.get("model", "solar")
             provider = payload.get('provider', 'ollama') # defaults to ollama right now
             api_key = payload.get('api_key', 'ollama')
-            print("inputs", provider, api_key)
+            
             llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
 
@@ -172,7 +172,7 @@ async def chat(websocket: WebSocket):
                     dummy_data[message_id]['in_line'] = {'base_analysis': base_analysis}
                 if config['calculateModerationTags']:
                     dummy_data[message_id]['commenter'] = {'base_analysis': text_classifiers}
-
+                
                 conv_cache_manager.save_to_cache(conversation_id, dummy_data)
                 # Removing the keys from the nested dictionary
                 if message_id in dummy_data:
@@ -185,6 +185,7 @@ async def chat(websocket: WebSocket):
                 print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
                 await process_logger.start("saveToConversationCache-user")
                 # Saving an empty dictionary for the messag id
+                print("saving save_to_cache 2")
                 conv_cache_manager.save_to_cache(conversation_id, {
                     message_id : 
                         {

@@ -3,6 +3,7 @@ import logging
 
 import psycopg2
 import json
+import datetime 
 
 import os
 import pickle
@@ -10,6 +11,13 @@ import hashlib
 import logging
 from dotenv import load_dotenv
 from collections import OrderedDict
+
+  
+# Define a custom function to serialize datetime objects 
+def serialize_datetime(obj): 
+    if isinstance(obj, datetime.datetime): 
+        return obj.isoformat() 
+    raise TypeError("Type not serializable") 
 
 class ConversationCacheManager:
     def __init__(self, cache_dir="./_conv_cache", use_postgres=False, db_config=None):
@@ -171,7 +179,7 @@ class ConversationCacheManager:
                     FROM conversation_cache
                     WHERE conv_id = %s
                 """, (conv_id,))
-                row = cur.fetchone()
+                row = cur.fetchall() #cur.fetchone()
                 if row:
                     conversation_data = row[0]  # PostgreSQL JSONB is automatically deserialized
                     logging.info(f"Successfully loaded data for conv_id: {conv_id}")
@@ -184,8 +192,6 @@ class ConversationCacheManager:
 
     def save_to_cache(self, conv_id, new_data, prefix=""):
         """Save data to the cache using a specific prefix and update existing dictionary."""
-        print("\t[ saving to cache ]")
-        print(new_data)
         if self.use_postgres:
             self._ensure_table_exists()
             self._save_to_postgres(conv_id, new_data)
@@ -237,10 +243,10 @@ class ConversationCacheManager:
                     INSERT INTO conversation_cache (conv_id, message_data)
                     VALUES (%s, %s::jsonb)
                     ON CONFLICT (conv_id) DO UPDATE
-                    SET message_data = EXCLUDED.message_data
-                """, (conv_id, json.dumps(new_data)))
-            self.conn.commit()
-            logging.info(f"Successfully saved data for conv_id: {conv_id}")
+                    SET message_data = conversation_cache.message_data || EXCLUDED.message_data
+                """, (conv_id, json.dumps([new_data], default=serialize_datetime)))
+                self.conn.commit()
+                logging.info(f"Successfully saved data for conv_id: {conv_id}")
         except Exception as e:
             logging.error(f"Failed to save to PostgreSQL for conv_id {conv_id}: {e}", exc_info=True)
             self.conn.rollback()

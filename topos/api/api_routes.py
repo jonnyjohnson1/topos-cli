@@ -58,6 +58,7 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     conversation_id = request.conversation_id
     # load conversation
     conv_data = cache_manager.load_from_cache(conversation_id)
+    
     if conv_data is None:
         raise HTTPException(status_code=404, detail="Conversation not found in cache")
     # Initialize counters
@@ -71,28 +72,57 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     emotion_counter_per_user = defaultdict(Counter)
 
     print(f"\t[ conversational analysis ]")
-    # Extract counts
-    for conversation_id, messages in conv_data.items():
-        print(f"\t\t[ item :: {conversation_id} ]")
-        for message_id, content in messages.items():
-            print(f"\t\t\t[ content :: {str(content)[40:]} ]")
-            print(f"\t\t\t[ keys :: {str(content.keys())[40:]} ]")
-            role = content['role']
-            user = role
-            if role == "user" and 'user_name' in content:
-                user =  content['user_name']
-            base_analysis = content['in_line']['base_analysis']
-            for entity_type, entities in base_analysis.items():
-                named_entity_counter[entity_type] += len(entities)
-                named_entity_counter_per_user[user][entity_type] += len(entities)
-                for entity in entities:
-                    entity_text_counter[str(entity['text'])] += 1
-                    entity_text_counter_per_user[user][str(entity['text'])] += 1
-            
-            emotions = content['commenter']['base_analysis']['emo_27']
-            for emotion in emotions:
-                emotion_counter[emotion['label']] += 1
-                emotion_counter_per_user[user][emotion['label']] += 1
+    if cache_manager.use_postgres:
+        # Extract counts
+        for conversation_id, messages_list in conv_data.items():
+            print(f"\t\t[ item :: {conversation_id} ]")
+            for message_dict in messages_list:
+                for cntn in message_dict:
+                    for message_id, content in cntn.items():
+                        # print(f"\t\t\t[ content :: {str(content)[40:]} ]")
+                        # print(f"\t\t\t[ keys :: {str(content.keys())[40:]} ]")
+                        role = content['role']
+                        user = role
+                        if role == "user" and 'user_name' in content:
+                            user = content['user_name']
+
+                        # Process named entities and base analysis
+                        base_analysis = content['in_line']['base_analysis']
+                        for entity_type, entities in base_analysis.items():
+                            named_entity_counter[entity_type] += len(entities)
+                            named_entity_counter_per_user[user][entity_type] += len(entities)
+                            for entity in entities:
+                                entity_text_counter[str(entity.get('text', ''))] += 1
+                                entity_text_counter_per_user[user][str(entity.get('text', ''))] += 1
+
+                        # Process emotions
+                        emotions = content['commenter']['base_analysis']['emo_27']
+                        for emotion in emotions:
+                            emotion_counter[emotion['label']] += 1
+                            emotion_counter_per_user[user][emotion['label']] += 1
+    else:
+        # Extract counts
+        for conversation_id, messages in conv_data.items():
+            print(f"\t\t[ item :: {conversation_id} ]")
+            for message_id, content in messages.items():
+                # print(f"\t\t\t[ content :: {str(content)[40:]} ]")
+                # print(f"\t\t\t[ keys :: {str(content.keys())[40:]} ]")
+                role = content['role']
+                user = role
+                if role == "user" and 'user_name' in content:
+                    user =  content['user_name']
+                base_analysis = content['in_line']['base_analysis']
+                for entity_type, entities in base_analysis.items():
+                    named_entity_counter[entity_type] += len(entities)
+                    named_entity_counter_per_user[user][entity_type] += len(entities)
+                    for entity in entities:
+                        entity_text_counter[str(entity['text'])] += 1
+                        entity_text_counter_per_user[user][str(entity['text'])] += 1
+                
+                emotions = content['commenter']['base_analysis']['emo_27']
+                for emotion in emotions:
+                    emotion_counter[emotion['label']] += 1
+                    emotion_counter_per_user[user][emotion['label']] += 1
 
     # Evocations equals num of each entity
     # print("Named Entity Count:")
@@ -106,7 +136,7 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     # print("\nEmotion Count:")
     # print(emotion_counter)            # also get a population count of all the emotions that were invoked in the conversation
 
-    print("\t\t[ emotion counter per-user :: {emotion_counter_per_user}")
+    # print("\t\t[ emotion counter per-user :: {emotion_counter_per_user}")
     # Convert Counter objects to dictionaries
     named_entity_dict = {
         "totals": dict(named_entity_counter),
