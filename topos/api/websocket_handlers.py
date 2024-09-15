@@ -14,6 +14,7 @@ from ..utilities.utils import create_conversation_string
 from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
 from ..services.loggers.process_logger import ProcessLogger
 from ..services.ontology_service.mermaid_chart import MermaidCreator
+import os
 
 # cache database
 from topos.FC.conversation_cache_manager import ConversationCacheManager
@@ -23,6 +24,25 @@ from topos.channel.debatesim import DebateSimulator
 
 router = APIRouter()
 debate_simulator = DebateSimulator.get_instance()
+
+
+import logging
+
+db_config = {
+            "dbname": os.getenv("POSTGRES_DB"),
+            "user": os.getenv("POSTGRES_USER"),
+            "password": os.getenv("POSTGRES_PASSWORD"),
+            "host": os.getenv("POSTGRES_HOST"),
+            "port": os.getenv("POSTGRES_PORT")
+        }
+
+logging.info(f"Database configuration: {db_config}")
+
+use_postgres = True
+if use_postgres:
+    cache_manager = ConversationCacheManager(use_postgres=True, db_config=db_config)
+else:
+    cache_manager = ConversationCacheManager()
 
 async def end_ws_process(websocket, websocket_process, process_logger, send_json, write_logs=True):
     await process_logger.end(websocket_process)
@@ -134,7 +154,7 @@ async def chat(websocket: WebSocket):
                 await process_logger.end("calculateModerationTags-user")
                 print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
             
-            conv_cache_manager = ConversationCacheManager()
+            conv_cache_manager = cache_manager
             if config['calculateModerationTags'] or config['calculateInMessageNER']:
                 await process_logger.start("saveToConversationCache-user")
                 print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
@@ -369,7 +389,7 @@ async def meta_chat(websocket: WebSocket):
 
 
             # load conversation
-            cache_manager = ConversationCacheManager()
+            cache_manager = cache_manager
             conv_data = cache_manager.load_from_cache(conversation_id)
             if conv_data is None:
                 raise HTTPException(status_code=404, detail="Conversation not found in cache")
@@ -434,7 +454,7 @@ async def meta_chat(websocket: WebSocket):
             mermaid_generator = MermaidCreator(llm_client)
             # load conversation
             if full_conversation:
-                cache_manager = ConversationCacheManager()
+                cache_manager = cache_manager
                 conv_data = cache_manager.load_from_cache(conversation_id)
                 if conv_data is None:
                     raise HTTPException(status_code=404, detail="Conversation not found in cache")

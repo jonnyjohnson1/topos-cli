@@ -17,10 +17,26 @@ from ..generations.chat_gens import LLMController
 from ..utilities.utils import create_conversation_string
 from ..services.ontology_service.mermaid_chart import MermaidCreator
 
-cache_manager = ConversationCacheManager()
+import logging
+
+db_config = {
+            "dbname": os.getenv("POSTGRES_DB"),
+            "user": os.getenv("POSTGRES_USER"),
+            "password": os.getenv("POSTGRES_PASSWORD"),
+            "host": os.getenv("POSTGRES_HOST"),
+            "port": os.getenv("POSTGRES_PORT")
+        }
+
+logging.info(f"Database configuration: {db_config}")
+
+use_postgres = True
+if use_postgres:
+    cache_manager = ConversationCacheManager(use_postgres=True, db_config=db_config)
+else:
+    cache_manager = ConversationCacheManager()
+    
 class ConversationIDRequest(BaseModel):
     conversation_id: str
-
 
 @router.post("/shutdown")
 def shutdown(request: Request):
@@ -365,7 +381,7 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
         
 
         if full_conversation:
-            cache_manager = ConversationCacheManager()
+            cache_manager = cache_manager
             conv_data = cache_manager.load_from_cache(conversation_id)
             if conv_data is None:
                 raise HTTPException(status_code=404, detail="Conversation not found in cache")

@@ -17,7 +17,6 @@ class ConversationCacheManager:
         self.use_postgres = use_postgres
         self.db_config = db_config
         self.conn = None
-
         if not use_postgres:
             os.makedirs(cache_dir, exist_ok=True)
         elif db_config is not None:
@@ -185,6 +184,8 @@ class ConversationCacheManager:
 
     def save_to_cache(self, conv_id, new_data, prefix=""):
         """Save data to the cache using a specific prefix and update existing dictionary."""
+        print("\t[ saving to cache ]")
+        print(new_data)
         if self.use_postgres:
             self._ensure_table_exists()
             self._save_to_postgres(conv_id, new_data)

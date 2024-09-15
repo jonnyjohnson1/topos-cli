@@ -13,10 +13,25 @@ from ..services.classification_service.base_analysis import base_text_classifier
 import json
 import time
 from datetime import datetime
+import logging
 
 router = APIRouter()
 
-cache_manager = ConversationCacheManager()
+db_config = {
+            "dbname": os.getenv("POSTGRES_DB"),
+            "user": os.getenv("POSTGRES_USER"),
+            "password": os.getenv("POSTGRES_PASSWORD"),
+            "host": os.getenv("POSTGRES_HOST"),
+            "port": os.getenv("POSTGRES_PORT")
+        }
+
+logging.info(f"Database configuration: {db_config}")
+
+use_postgres = True
+if use_postgres:
+    cache_manager = ConversationCacheManager(use_postgres=True, db_config=db_config)
+else:
+    cache_manager = ConversationCacheManager()
 
 @router.post("/p2p/process_message")
 async def process_message(request: Request):
@@ -64,11 +79,11 @@ async def process_message(request: Request):
         try:
             text_classifiers = base_text_classifier(message)
         except Exception as e:
-            logging.error(f"Failed to compute base_text_classifier: {cache_path}: {e}")
+            logging.error(f"Failed to compute base_text_classifier: {e}")
         duration = time.time() - start_time
         print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
     
-    conv_cache_manager = ConversationCacheManager()
+    conv_cache_manager = cache_manager
     dummy_data = {}  # Replace with actual processing logic
     if config['calculateModerationTags'] or config['calculateInMessageNER']:
         print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
@@ -116,6 +131,5 @@ async def process_message(request: Request):
                 'message': message, 
                 'timestamp': datetime.now(), 
             }}  # Replace with actual processing logic
-
 
     return {"status": "fetched_user_analysis", "user_message": dummy_data}
