@@ -6,6 +6,7 @@ from topos.services.database.database_interface import DatabaseInterface
 
 class PostgresDatabase(DatabaseInterface):
     def __init__(self, dbname: str, user: str, password: str, host: str = 'localhost', port: str = '5432'):
+        print("[ In PostgresDatabase init ]")
         super().__init__()
         self.pool = psycopg2.pool.SimpleConnectionPool(1, 20,
             dbname=dbname, user=user, password=password, host=host, port=port
