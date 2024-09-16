@@ -41,7 +41,7 @@ class ConversationCacheManager:
 
             if not self.conn.closed:
                 logging.info("Successfully connected to PostgreSQL")
-                self._ensure_table_structure()
+                # self._ensure_table_structure()
             else:
                 logging.error("Failed to establish a valid connection to PostgreSQL")
                 raise ConnectionError("Unable to establish a valid connection to PostgreSQL")
@@ -56,7 +56,7 @@ class ConversationCacheManager:
 
         if self.conn:
             try:
-                self._ensure_table_structure()
+                # self._ensure_table_structure()
                 self._check_table_structure()  # Add this line
             except Exception as e:
                 logging.error(f"Failed to ensure table structure: {e}", exc_info=True)
@@ -83,28 +83,28 @@ class ConversationCacheManager:
         except Exception as e:
             logging.error(f"Failed to check table structure: {e}", exc_info=True)
 
-    def _ensure_table_structure(self):
-        if self.conn is None:
-            logging.error("PostgreSQL connection is not initialized")
-            raise ConnectionError("PostgreSQL connection is not initialized")
+    # def _ensure_table_structure(self):
+    #     if self.conn is None:
+    #         logging.error("PostgreSQL connection is not initialized")
+    #         raise ConnectionError("PostgreSQL connection is not initialized")
 
-        try:
-            logging.debug("Ensuring table structure exists")
-            with self.conn.cursor() as cur:
-                cur.execute("DROP TABLE IF EXISTS conversation_cache")
-                cur.execute("""
-                    CREATE TABLE conversation_cache (
-                        conv_id TEXT PRIMARY KEY,
-                        message_data JSONB NOT NULL
-                    )
-                """)
-            self.conn.commit()
-            logging.info("Table structure ensured successfully")
-        except Exception as e:
-            logging.error(f"Failed to ensure table structure: {e}", exc_info=True)
-            if self.conn:
-                self.conn.rollback()
-            raise
+    #     try:
+    #         logging.debug("Ensuring table structure exists")
+    #         with self.conn.cursor() as cur:
+    #             cur.execute("DROP TABLE IF EXISTS conversation_cache")
+    #             cur.execute("""
+    #                 CREATE TABLE conversation_cache (
+    #                     conv_id TEXT PRIMARY KEY,
+    #                     message_data JSONB NOT NULL
+    #                 )
+    #             """)
+    #         self.conn.commit()
+    #         logging.info("Table structure ensured successfully")
+    #     except Exception as e:
+    #         logging.error(f"Failed to ensure table structure: {e}", exc_info=True)
+    #         if self.conn:
+    #             self.conn.rollback()
+    #         raise
 
     def _ensure_table_exists(self):
         if self.conn is None:
@@ -124,7 +124,7 @@ class ConversationCacheManager:
 
                 if not table_exists:
                     logging.info("conversation_cache table does not exist, creating it")
-                    self._ensure_table_structure()
+                    # self._ensure_table_structure()
                 else:
                     logging.debug("conversation_cache table already exists")
         except Exception as e:
