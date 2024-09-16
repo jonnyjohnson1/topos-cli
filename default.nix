@@ -26,6 +26,7 @@ in pkgs.mkShell {
 
     echo "Initializing PostgreSQL data directory at $PGDATA"
     
+    echo "PGDATA: $PGDATA"
     if [ ! -d "$PGDATA" ]; then
         initdb -D "$PGDATA" | tee -a $LOGFILE
     fi
@@ -41,6 +42,11 @@ in pkgs.mkShell {
 
     # Set up the test database, role, and tables
     psql -d $POSTGRES_DB <<SQL | tee -a $LOGFILE
+    CREATE TABLE IF NOT EXISTS conversation_cache (
+        conv_id TEXT PRIMARY KEY,
+        message_data JSONB NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS entities (
         id TEXT PRIMARY KEY,
         label TEXT NOT NULL,
