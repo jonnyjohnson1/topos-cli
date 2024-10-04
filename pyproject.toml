@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "chat-server"
+version = "0.1.0"
+description = ""
+authors = ["anchellon <anshulmathew@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = {extras = ["standard"], version = "^0.112.0"} 
+confluent-kafka = "^2.5.0"
+aiokafka = "^0.11.0"
+redis = "^5.0.8"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
