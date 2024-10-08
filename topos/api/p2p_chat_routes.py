@@ -1,8 +1,6 @@
 import os
 from fastapi import APIRouter, HTTPException, Request
 import requests
-import tkinter as tk
-from tkinter import filedialog
 from topos.FC.conversation_cache_manager import ConversationCacheManager
 from collections import Counter, OrderedDict, defaultdict
 from pydantic import BaseModel
@@ -70,7 +68,7 @@ async def process_message(request: Request):
         base_analysis = base_token_classifier(message)  # this is only an ner dict atm
         duration = time.time() - start_time
         print(f"\t[ base_token_classifier duration: {duration:.4f} seconds ]")
-    
+
     # Fetch base, per-message text classifiers
     # Start timer for base_text_classifier
     if config['calculateModerationTags']:
@@ -82,19 +80,19 @@ async def process_message(request: Request):
             logging.error(f"Failed to compute base_text_classifier: {e}")
         duration = time.time() - start_time
         print(f"\t[ base_text_classifier duration: {duration:.4f} seconds ]")
-    
+
     conv_cache_manager = cache_manager
     dummy_data = {}  # Replace with actual processing logic
     if config['calculateModerationTags'] or config['calculateInMessageNER']:
         print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
         try:
             dummy_data = {
-                message_id : 
+                message_id :
                     {
                     'user_name': user_name,
                     'user_id': user_id,
                     'role': role,
-                    'timestamp': datetime.now(), 
+                    'timestamp': datetime.now(),
                     'message': message
                 }}
         except Exception as e:
@@ -114,22 +112,22 @@ async def process_message(request: Request):
         print(f"\t[ save to conv cache :: conversation {conversation_id}-{message_id} ]")
         # Saving an empty dictionary for the messag id
         conv_cache_manager.save_to_cache(conversation_id, {
-            message_id : 
+            message_id :
                 {
                 'user_name': user_name,
                 'user_id': user_id,
                 'role': role,
-                'message': message, 
-                'timestamp': datetime.now(), 
+                'message': message,
+                'timestamp': datetime.now(),
             }})
         dummy_data = {
-            message_id : 
+            message_id :
                 {
                 'user_name': user_name,
                 'user_id': user_id,
                 'role': role,
-                'message': message, 
-                'timestamp': datetime.now(), 
+                'message': message,
+                'timestamp': datetime.now(),
             }}  # Replace with actual processing logic
 
     return {"status": "fetched_user_analysis", "user_message": dummy_data}
