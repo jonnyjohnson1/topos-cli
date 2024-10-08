@@ -2,19 +2,7 @@ import os
 
 import spacy
 from spacy.tokens import Token
-import yaml
-
-from topos.utilities.utils import get_root_directory
-
-# Assuming the config.yaml is in ./topos/ relative to setup.py directory
-config_path = os.path.join(get_root_directory(), 'config.yaml')
-
-with open(config_path, 'r') as file:
-    settings = yaml.safe_load(file)
-
-# Load the spacy model setting
-model_name = settings.get('active_spacy_model')
-
+import en_core_web_sm
 
 def get_token_sent(token):
     '''
@@ -23,10 +11,9 @@ def get_token_sent(token):
     token_span = token.doc[token.i:token.i+1]
     return token_span.sent
 
-
 # Now you can use `model_name` in your code
-print(f"[ mem-loader :: Using spaCy model: {model_name} ]")
-nlp = spacy.load(model_name)
+print(f"[ mem-loader :: Using spaCy model: en_core_web_sm ]")
+nlp = en_core_web_sm.load()
 Token.set_extension('sent', getter=get_token_sent, force = True)
 
 def get_entity_dict(doc):
