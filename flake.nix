@@ -22,10 +22,7 @@
                 myapp = final.callPackage myapp { };
                 pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
                   (python-final: python-prev: {
-                    pyobjc-core = python-final.callPackage ./overlays/pyobjc-core/default.nix { };
-                    pystray = python-final.callPackage ./overlays/pystray/default.nix {
-                            inherit (python-final) pyobjc-core;
-                          };
+                    pystray = python-final.callPackage ./overlays/pystray/default.nix { };
                   })
                 ];
             })
