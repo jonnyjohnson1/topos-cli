@@ -3642,17 +3642,6 @@ files = [
 ]
 
 [[package]]
-name = "tk"
-version = "0.1.0"
-description = "TensorKit is a deep learning helper between Python and C++."
-optional = false
-python-versions = "*"
-files = [
-    {file = "tk-0.1.0-py3-none-any.whl", hash = "sha256:703a69ff0d5ba2bd2f7440582ad10160e4a6561595d33457dc6caa79b9bf4930"},
-    {file = "tk-0.1.0.tar.gz", hash = "sha256:60bc8923d5d35f67f5c6bd93d4f0c49d2048114ec077768f959aef36d4ed97f8"},
-]
-
-[[package]]
 name = "tokenizers"
 version = "0.19.1"
 description = ""
@@ -4197,4 +4186,4 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "bafc5628b0fa782e86f4d365713980dbf7c8ce1c6d05fde8e77a338e58dcac55"
+content-hash = "da4722ceb802967820706b6282c26e3b60a6905b0d0941af03572280ee8b3858"
