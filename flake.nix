@@ -57,6 +57,10 @@
           # Use this shell for developing your app.
           default = pkgs.mkShell {
             inputsFrom = [ pkgs.myapp ];
+
+            shellHook = ''
+              export PATH="${pkgs.myapp}/bin:$PATH"
+            '';
           };
 
           # Shell for poetry.
