@@ -38,11 +38,11 @@ pyjwt = "^2.8.0"
 python-multipart = "^0.0.9"
 pytest-asyncio = "^0.23.7"
 textblob = "^0.18.0.post0"
-tk = "0.1.0"
 pystray = "0.19.5"
 
 supabase = "^2.6.0"
 psycopg2-binary = "^2.9.9"
+en-core-web-sm = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"}
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
 pytest-asyncio = "^0.23.2"
