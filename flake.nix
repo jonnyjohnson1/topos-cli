@@ -41,7 +41,7 @@
                 }))
               {
                 # https://github.com/nix-community/poetry2nix/blob/master/docs/edgecases.md#modulenotfounderror-no-module-named-packagename
-                # package = [ "setuptools" ];
+                package = [ "setuptools" ];
               }
           );
         };
@@ -56,7 +56,7 @@
           #
           # Use this shell for developing your app.
           default = pkgs.mkShell {
-            inputsFrom = [ pkgs.myapp ];
+            inputsFrom = [  pkgs.myapp ];
 
             shellHook = ''
               export PATH="${pkgs.myapp}/bin:$PATH"
