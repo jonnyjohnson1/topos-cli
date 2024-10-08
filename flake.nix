@@ -48,7 +48,14 @@
 
       in
       {
-        packages.default = pkgs.myapp;
+        packages = {
+            default = pkgs.myapp;
+            topos = pkgs.writeShellScriptBin "topos" ''
+            export PATH="${pkgs.myapp}/bin:$PATH"
+            ${pkgs.myapp}/bin/topos run
+            '';
+        };
+
         devShells = {
           # Shell for app dependencies.
           #
@@ -60,6 +67,20 @@
 
             shellHook = ''
               export PATH="${pkgs.myapp}/bin:$PATH"
+            '';
+          };
+
+          # Shell for topos
+          #
+          #     nix develop .#topos
+          #
+          # Use this shell running topos
+          topos = pkgs.mkShell {
+            inputsFrom = [  pkgs.myapp ];
+
+            shellHook = ''
+              export PATH="${pkgs.myapp}/bin:$PATH"
+              topos run
             '';
           };
 
