@@ -70,30 +70,52 @@
         postgresSetupHook = ''
           # SETUP POSTGRES SERVER
           echo "Loading environment variables from Nix store"
-            export $(cat ${envFile} | xargs)
+          export $(cat ${envFile} | xargs)
 
           # Define PGDATA and LOGFILE based on environment variables
           export PGDATA=$(pwd)/pgdata
-          LOGFILE=$(pwd)/pgdata/postgresql.log
+          LOGFILE=$PGDATA/postgresql.log
 
           echo "Initializing PostgreSQL data directory at $PGDATA"
 
           echo "PGDATA: $PGDATA"
           if [ ! -d "$PGDATA" ]; then
-              initdb -D "$PGDATA" | tee -a $LOGFILE
+            mkdir -p "$PGDATA"
+            initdb -D "$PGDATA"
           fi
 
           echo "Stopping any existing PostgreSQL server..."
-          pg_ctl -D "$PGDATA" stop || echo "No existing server to stop."
+          pg_ctl -D "$PGDATA" stop -s -m fast || echo "No existing server to stop."
 
           echo "Starting PostgreSQL server..."
-          pg_ctl -D "$PGDATA" -l $LOGFILE start
+          pg_ctl -D "$PGDATA" -l $LOGFILE start -w
 
           # Wait for PostgreSQL to start
-          sleep 2
+          for i in {1..10}; do
+            if pg_isready -q; then
+              break
+            fi
+            echo "Waiting for PostgreSQL to start..."
+            sleep 1
+          done
+
+          if ! pg_isready -q; then
+            echo "Failed to start PostgreSQL. Check the logs at $LOGFILE"
+            exit 1
+          fi
+
+          # Create the database if it doesn't exist
+          if ! psql -lqt | cut -d \| -f 1 | grep -qw "$POSTGRES_DB"; then
+            createdb "$POSTGRES_DB"
+          fi
+
+          # Create the user if they don't exist
+          if ! psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$POSTGRES_USER'" | grep -q 1; then
+            createuser -s "$POSTGRES_USER"
+          fi
 
           # Set up the test database, role, and tables
-          psql -d $POSTGRES_DB <<SQL | tee -a $LOGFILE
+          psql -v ON_ERROR_STOP=1 -d $POSTGRES_DB <<SQL
           CREATE TABLE IF NOT EXISTS conversation_cache (
               conv_id TEXT PRIMARY KEY,
               message_data JSONB NOT NULL
@@ -113,7 +135,6 @@
               PRIMARY KEY (source_id, relation_type, target_id)
           );
 
-          CREATE ROLE $POSTGRES_USER WITH LOGIN PASSWORD '$POSTGRES_PASSWORD';
           GRANT ALL PRIVILEGES ON DATABASE $POSTGRES_DB TO $POSTGRES_USER;
           GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $POSTGRES_USER;
           GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $POSTGRES_USER;
@@ -125,7 +146,7 @@
           -- If you're using PostgreSQL 14 or later, you can also add these:
           GRANT pg_read_all_data TO $POSTGRES_USER;
           GRANT pg_write_all_data TO $POSTGRES_USER;
-          SQL
+        SQL
 
           echo "PostgreSQL setup complete. Logs can be found at $LOGFILE"
           # FINISH POSTGRES SERVER
