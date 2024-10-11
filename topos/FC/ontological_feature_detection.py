@@ -10,7 +10,7 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification, pipelin
 from datetime import datetime
 
 from topos.services.database.app_state import AppState
-from topos.utilities.utils import get_root_directory
+from topos.utilities.utils import get_config_path
 import os
 import yaml
 
@@ -37,11 +37,11 @@ class OntologicalFeatureDetection:
         self.tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER")
         self.model = AutoModelForTokenClassification.from_pretrained("dslim/bert-base-NER")
         # Assuming the config.yaml is in ./topos/ relative to setup.py directory
-        config_path = os.path.join(get_root_directory(), 'config.yaml')
+        config_path = get_config_path()
 
         with open(config_path, 'r') as file:
             settings = yaml.safe_load(file)
-        
+
         spacy_model_name = settings.get('active_spacy_model')
 
         # Load SpaCy models
