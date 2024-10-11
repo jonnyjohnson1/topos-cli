@@ -1,8 +1,6 @@
-import subprocess
 import yaml
 import os
-from ..utilities.utils import get_python_command, get_root_directory
-
+from ..utilities.utils import get_config_path
 
 def download_spacy_model(model_selection):
     if model_selection == 'small':
@@ -15,17 +13,13 @@ def download_spacy_model(model_selection):
         model_name = "en_core_web_trf"
     else: #default
         model_name = "en_core_web_sm"
-        
-    python_command = get_python_command()
-    
+
     # Define the path to the config.yaml file
-    config_path = os.path.join(get_root_directory(), 'config.yaml')
+    config_path = get_config_path()
     try:
-        subprocess.run([python_command, '-m', 'spacy', 'download', model_name], check=True)
         # Write updated settings to YAML file
         with open(config_path, 'w') as file:
             yaml.dump({'active_spacy_model': model_name}, file)
-        print(f"Successfully downloaded '{model_name}' spaCy model.")
         print(f"'{model_name}' set as active model.")
-    except subprocess.CalledProcessError as e:
-        print(f"Error downloading '{model_name}' spaCy model: {e}")
+    except Exception as e:
+        print(f"An error occurred setting config.yaml: {e}")

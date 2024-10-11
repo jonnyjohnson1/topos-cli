@@ -46,6 +46,25 @@
           );
         };
 
+        configFile = pkgs.copyPathToStore ./config.yaml;
+        yq = pkgs.yq-go;
+
+        # Note: This only loads the settings from the repos config file
+        #        if one is not already set in the user's .config directory.
+        toposSetupHook = ''
+          export TOPOS_CONFIG_PATH="$HOME/.config/topos/config.yaml"
+          mkdir -p "$(dirname "$TOPOS_CONFIG_PATH")"
+          if [ ! -f "$TOPOS_CONFIG_PATH" ]; then
+            echo "Creating new config file at $TOPOS_CONFIG_PATH"
+            echo "# Topos Configuration" > "$TOPOS_CONFIG_PATH"
+            ${yq}/bin/yq eval ${configFile} | while IFS= read -r line; do
+              echo "$line" >> "$TOPOS_CONFIG_PATH"
+            done
+            echo "Config file created at $TOPOS_CONFIG_PATH"
+          else
+            echo "Config file already exists at $TOPOS_CONFIG_PATH"
+          fi
+        '';
       in
       {
         packages = {
@@ -67,6 +86,7 @@
 
             shellHook = ''
               export PATH="${pkgs.myapp}/bin:$PATH"
+              ${toposSetupHook}
             '';
           };
 
@@ -80,6 +100,7 @@
 
             shellHook = ''
               export PATH="${pkgs.myapp}/bin:$PATH"
+              ${toposSetupHook}
               topos run
             '';
           };

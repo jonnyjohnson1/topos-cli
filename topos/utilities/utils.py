@@ -3,7 +3,6 @@ import random
 import os
 import shutil
 
-
 def get_python_command():
     if shutil.which("python"):
         return "python"
@@ -12,21 +11,26 @@ def get_python_command():
     else:
         raise EnvironmentError("No Python interpreter found")
 
+def get_config_path():
+    config_path = os.getenv('TOPOS_CONFIG_PATH')
+    if not config_path:
+        raise EnvironmentError("TOPOS_CONFIG_PATH environment variable is not set")
+    return config_path
 
 def get_root_directory():
     # Get the current file's directory
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    
+
     # Find the first occurrence of "topos" from the right
     topos_index = current_file_directory.rfind("topos")
-    
+
     if topos_index != -1:
         # Get the path up to the first "topos" directory
         base_topos_directory = current_file_directory[:topos_index + len("topos")]
         return base_topos_directory
     else:
         raise ValueError("The 'topos' directory was not found in the path.")
-    
+
 def parse_json(data):
     import json
     return json.loads(data)
