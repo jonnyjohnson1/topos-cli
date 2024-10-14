@@ -2,24 +2,26 @@
   description = "topos";
 
   inputs = {
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-parts.url = "github:hercules-ci/flake-parts";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     poetry2nix = {
       url = "github:nix-community/poetry2nix";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, poetry2nix }:
-    flake-utils.lib.eachSystem ["aarch64-darwin"] (system:
+  outputs = { self, nixpkgs, flake-parts, poetry2nix }@inputs:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+    imports = [ ];
+    systems = [ "x86_64-linux" "aarch64-darwin" ];
+    perSystem = { pkgs, system, ... }:
       let
         pkgs = import nixpkgs {
             inherit system;
             overlays = [
-            poetry2nix.overlays.default
+            inputs.poetry2nix.overlays.default
             (final: prev: {
-                myapp = final.callPackage myapp { };
+                toposPoetryEnv = final.callPackage toposPoetryEnv { };
                 pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
                   (python-final: python-prev: {
                     pystray = python-final.callPackage ./overlays/pystray/default.nix { };
@@ -28,22 +30,23 @@
             })
             ];
         };
-
         # see https://github.com/nix-community/poetry2nix/tree/master#api for more functions and examples.
-        myapp = { poetry2nix, lib }: poetry2nix.mkPoetryApplication {
+        #TODO: Figure out how to add setuptools to all the packages which need it, this is currently not working as expected.
+        overrides = pkgs.poetry2nix.overrides.withDefaults (final: super:
+          pkgs.lib.mapAttrs
+            (attr: systems: super.${attr}.overridePythonAttrs
+              (old: {
+                nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ map (a: final.${a}) systems;
+              }))
+            {
+              # https://github.com/nix-community/poetry2nix/blob/master/docs/edgecases.md#modulenotfounderror-no-module-named-packagename
+              package = [ "setuptools" ];
+            }
+        );
+        toposPoetryEnv = pkgs.poetry2nix.mkPoetryEnv {
           projectDir = self;
           preferWheels = true;
-          overrides = poetry2nix.overrides.withDefaults (final: super:
-            lib.mapAttrs
-              (attr: systems: super.${attr}.overridePythonAttrs
-                (old: {
-                  nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ map (a: final.${a}) systems;
-                }))
-              {
-                # https://github.com/nix-community/poetry2nix/blob/master/docs/edgecases.md#modulenotfounderror-no-module-named-packagename
-                package = [ "setuptools" ];
-              }
-          );
+          inherit overrides;
         };
 
         envFile = pkgs.writeText "env_dev" (builtins.readFile ./.env_dev);
@@ -196,11 +199,15 @@
 
       in
       {
-        packages = {
-            default = pkgs.myapp;
-            topos = pkgs.writeShellScriptBin "topos" ''
-            export PATH="${pkgs.myapp}/bin:$PATH"
-            ${pkgs.myapp}/bin/topos run
+        packages =  rec {
+            topos = pkgs.poetry2nix.mkPoetryApplication {
+            projectDir = self;
+            preferWheels = true;
+            inherit overrides;
+            };
+            default = pkgs.writeShellScriptBin "topos" ''
+              ${toposSetupHook}
+              ${topos}/bin/topos "$@"
             '';
         };
 
@@ -211,10 +218,10 @@
           #
           # Use this shell for developing your app.
           default = pkgs.mkShell {
-            inputsFrom = [  pkgs.myapp ];
+            inputsFrom = [ toposPoetryEnv ];
             packages = [ pkgs.postgresql ];
             shellHook = ''
-              export PATH="${pkgs.myapp}/bin:$PATH"
+              export PATH="${toposPoetryEnv}/bin:$PATH"
               ${toposSetupHook}
               ${postgresSetupHook}
             '';
@@ -226,10 +233,10 @@
           #
           # Use this shell running topos
           topos = pkgs.mkShell {
-            inputsFrom = [  pkgs.myapp ];
+            inputsFrom = [ toposPoetryEnv ];
             packages = [ pkgs.postgresql ];
             shellHook = ''
-              export PATH="${pkgs.myapp}/bin:$PATH"
+              export PATH="${toposPoetryEnv}/bin:$PATH"
               ${toposSetupHook}
               ${postgresSetupHook}
               topos run
@@ -246,6 +253,6 @@
           };
         };
         legacyPackages = pkgs;
+      };
+};
       }
-    );
-}
