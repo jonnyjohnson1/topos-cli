@@ -1,22 +1,20 @@
 # api_routes.py
-
 import os
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 import requests
 import signal
 import glob
 import sys
+from pydantic import BaseModel
 from topos.FC.conversation_cache_manager import ConversationCacheManager
-router = APIRouter()
-
+from topos.services.messages.group_management_service import GroupManagementService
+from topos.services.messages.missed_message_service import MissedMessageService
 from collections import Counter, OrderedDict, defaultdict
 from pydantic import BaseModel
-
 from ..generations.chat_gens import LLMController
 from ..utilities.utils import create_conversation_string
 from ..services.ontology_service.mermaid_chart import MermaidCreator
-
 import logging
 
 db_config = {
@@ -26,6 +24,19 @@ db_config = {
             "host": os.getenv("POSTGRES_HOST"),
             "port": os.getenv("POSTGRES_PORT")
         }
+
+router = APIRouter()
+
+class MissedMessagesRequest(BaseModel):
+    user_id: str
+
+class CreateGroupRequest(BaseModel):
+    group_name: str
+    user_id: str
+
+class JoinGroupRequest(BaseModel):
+    group_id: str
+    user_id: str
 
 logging.info(f"Database configuration: {db_config}")
 
@@ -458,3 +469,25 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@router.post("/chat/missed-messages")
+async def get_missed_messages(request: MissedMessagesRequest):
+    missed_message_service = MissedMessageService(db_config)
+    group_management_service = GroupManagementService(db_config)
+    return await missed_message_service.get_missed_messages(user_id=request.user_id, group_management_service=group_management_service)
+
+@router.post("/chat/create-group")
+async def create_group(request: CreateGroupRequest):
+    group_management_service = GroupManagementService(db_config)
+    group_id = group_management_service.create_group(request.group_name)
+    group_management_service.add_user_to_group(request.user_id, group_id)
+    return {"group_id": group_id}
+
+@router.post("/chat/join-group")
+async def join_group(request: JoinGroupRequest):
+    group_management_service = GroupManagementService(db_config)
+    if group_management_service.get_group_by_id(request.group_id):
+        group_management_service.add_user_to_group(request.user_id, request.group_id)
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=404, detail="Group not found")
