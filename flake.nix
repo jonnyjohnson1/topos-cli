@@ -1,5 +1,5 @@
 {
-  description = "topos";
+  description = "topos-cli";
 
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -26,7 +26,7 @@
                     toposPoetryEnv = final.callPackage toposPoetryEnv { };
                     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
                     (python-final: python-prev: {
-                        pystray = python-final.callPackage ./overlays/pystray/default.nix { };
+                        pystray = python-final.callPackage ./nix/overlays/pystray/default.nix { };
                     })
                     ];
                 })
@@ -78,7 +78,7 @@
             #        if one is not already set in the user's .config directory.
             toposSetupHook = ''
             export $(cat ${envFile} | xargs)
-            export TOPOS_CONFIG_PATH="$HOME/.config/topos/config.yaml"
+            export TOPOS_CONFIG_PATH="$HOME/.topos/config.yaml"
             mkdir -p "$(dirname "$TOPOS_CONFIG_PATH")"
             if [ ! -f "$TOPOS_CONFIG_PATH" ]; then
                 echo "Creating new config file at $TOPOS_CONFIG_PATH"
@@ -98,18 +98,19 @@
             process-compose."services-flake-topos" = { config, ... }: {
                 imports = [
                 inputs.services-flake.processComposeModules.default
-                (import ./topos-service.nix { inherit pkgs lib config; topos = self'.packages.topos; })
+                (import ./nix/services/topos-service.nix { inherit pkgs lib config; topos = self'.packages.topos; })
                 ];
-                services = let dataDirBase = "$HOME/.services-flake/llm"; in {
+                services = let dataDirBase = "$HOME/.topos"; in {
                     # Backend service to perform inference on LLM models
-                    ollama."ollama1" = {
+                    ollama."ollama" = {
                         enable = true;
 
                         # The models are usually huge, downloading them in every project
                         # directory can lead to a lot of duplication. Change here to a
                         # directory where the Ollama models can be stored and shared across
                         # projects.
-                        dataDir = "${dataDirBase}/ollama1";
+
+                        # dataDir = "${dataDirBase}/ollama";
 
                         # Define the models to download when our app starts
                         #
@@ -125,7 +126,7 @@
                       package = pkgs.postgresql_16.withPackages (p: [ p.pgvector ]);
                       port = 5432;
                       listen_addresses = "127.0.0.1";
-
+                      # dataDir = "${dataDirBase}/pg";
                       initialDatabases = [
                         { name = "${envVars.POSTGRES_DB}"; }
                       ];
@@ -172,27 +173,11 @@
                     apache-kafka."kafka" = {
                       enable = true;
                       port = 9092;
+                      # dataDir = "${dataDirBase}/kafka";
                       settings = {
                         "offsets.topic.replication.factor" = 1;
                         "zookeeper.connect" = [ "localhost:2181" ];
                       };
-                      # settings = {
-                      #   "broker.id" = 1;
-                      #   "log.dirs" = [ "/tmp/kraft-combined-logs/server-1" ];
-                      #   "listeners" = [ "PLAINTEXT://localhost:9092" "CONTROLLER://localhost:9091" ];
-                      #   "listener.security.protocol.map" = "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT";
-                      #   "advertised.listeners" = "PLAINTEXT://localhost:9092";
-                      #   "controller.quorum.voters" = "1@localhost:9091";
-                      #   "controller.listener.names" = "CONTROLLER";
-                      #   "process.roles" = "broker,controller";
-                      #   "node.id" = 1;
-                      #   "offsets.topic.replication.factor" = 1;
-                      #   "transaction.state.log.replication.factor" = 1;
-                      #   "transaction.state.log.min.isr" = 1;
-                      #   "auto.create.topics.enable" = true;
-                      #   "num.partitions" = 1;
-                      # };
-                      # clusterId = "$(${pkgs.apacheKafka}/bin/kafka-storage.sh random-uuid)";
                       formatLogDirs = true;
                       formatLogDirsIgnoreFormatted = true;
                       jvmOptions = [
