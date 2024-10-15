@@ -22,12 +22,21 @@ If nix is not installed:
 1. Install nix:
     macos/linux: `sh <(curl -L https://nixos.org/nix/install)`
     windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`
-Run the software with nix:
-2. Download this repo `git clone https://github.com/jonnyjohnson1/topos-cli`
-3. `cd topos-cli`
-3. ~~build the backend service (only run the topos set --spacy trf line if it is your first time setting up)~~
+2. Run Topos and all its dependencies:
+   ```
+   nix run github:jonnyjohnson1/topos-cli
+   ```
+   This will start all services including Topos, Postgres, Kafka, and Ollama.
 
-### Production
+## Development
+Clone the repository:
+```
+git clone https://github.com/jonnyjohnson1/topos-cli
+cd topos-cli
+```
+
+For development, you have several options:
+### Build Binary
 First build topos binary (only usable on machines with nix installed)
 ```
 nix build .#topos
@@ -40,12 +49,7 @@ run built binary
 ### Dev Shell
 ```
 nix develop
-run topos
-```
-
-### Dev Shell (auto start server)
-```
-nix develop .#topos
+topos run
 ```
 
 ### Poetry Shell
@@ -56,7 +60,6 @@ nix develop .#poetry
 ## Install Instructions
 requires `brew install just`
 requires `brew install poetry`
-requires `brew install python-tk`
 
 ## Graph Database - Install Neo4j
 
@@ -70,7 +73,6 @@ brew services start neo4j
 install the topos package with the command `just build`
 
 ### Step 2: Set the Spacy Model Size
-**BROKEN**
 Set the size of the spacy model you wish to use on your system.
 There are 'small', 'med', 'large', and 'trf'.
 
