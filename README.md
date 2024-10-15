@@ -5,7 +5,7 @@
   <em>Private AI Backend Service</em>
 </p>
 
----  
+---
 
 # Topos
 A personal intelligence service, using your own computer to power private conversations with friends, family, and coworkers, collect/store your own private data, and use AI privately. Runs  great with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
@@ -19,23 +19,47 @@ You should be able to launch the Topos service anywhere from your machine.
 
 ## Install with nix (Recommended)
 If nix is not installed:
-1. Install nix:   
-    macos/linux: `sh <(curl -L https://nixos.org/nix/install)`  
-    windows: `sh <(curl -L https://nixos.org/nix/install) --daemon` 
-Run the software with nix:
-1. Download this repo `git clone https://github.com/jonnyjohnson1/topos-cli`
-2. `cd topos-cli`
-3. build the backend service (only run the topos set --spacy trf line if it is your first time setting up)
+1. Install nix:
+    macos/linux: `sh <(curl -L https://nixos.org/nix/install)`
+    windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`
+2. Run Topos and all its dependencies:
+   ```
+   nix run github:jonnyjohnson1/topos-cli
+   ```
+   This will start all services including Topos, Postgres, Kafka, and Ollama.
+
+## Development
+Clone the repository:
 ```
-nix-shell
-topos set --spacy trf
+git clone https://github.com/jonnyjohnson1/topos-cli
+cd topos-cli
+```
+
+For development, you have several options:
+### Build Binary
+First build topos binary (only usable on machines with nix installed)
+```
+nix build .#topos
+```
+run built binary
+```
+./result/bin/topos
+```
+
+### Dev Shell
+```
+nix develop
 topos run
+```
+
+### Poetry Shell
+```
+nix develop .#poetry
 ```
 
 ## Install Instructions
 requires `brew install just`
 requires `brew install poetry`
-requires `brew install python-tk`
 
 ## Graph Database - Install Neo4j
 
@@ -49,8 +73,8 @@ brew services start neo4j
 install the topos package with the command `just build`
 
 ### Step 2: Set the Spacy Model Size
-Set the size of the spacy model you wish to use on your system. 
-There are 'small', 'med', 'large', and 'trf'.   
+Set the size of the spacy model you wish to use on your system.
+There are 'small', 'med', 'large', and 'trf'.
 
 Use the tag like this.
 `topos set --spacy small`
@@ -68,12 +92,12 @@ zrok is opensourced and free.
 ngrok has a gated requests/month under its free tier, then requires you pay for it.
 
 1. Be sure you have the `topos` server running already in another terminal.
-2. [Install zrok command](https://docs.zrok.io/docs/getting-started/?_gl=1*1yet1eb*_ga*MTQ1MDc2ODAyNi4xNzE3MDE3MTE3*_ga_V2KMEXWJ10*MTcxNzAxNzExNi4xLjAuMTcxNzAxNzExNi42MC4wLjA.*_gcl_au*NDk3NjM1MzEyLjE3MTcwMTcxMTc.#installing-the-zrok-command) 
+2. [Install zrok command](https://docs.zrok.io/docs/getting-started/?_gl=1*1yet1eb*_ga*MTQ1MDc2ODAyNi4xNzE3MDE3MTE3*_ga_V2KMEXWJ10*MTcxNzAxNzExNi4xLjAuMTcxNzAxNzExNi42MC4wLjA.*_gcl_au*NDk3NjM1MzEyLjE3MTcwMTcxMTc.#installing-the-zrok-command)
 3. `zrok enable <given_key>`
 4. `zrok status` should show you information
 5. Route local path through zrok: `zrok share public http://0.0.0.0:13341`
 This will take you to a new screen with an https://<url> at the top.
-Insert this url into the field under settings-> "Api Endpoints" -> "Custom API" 
+Insert this url into the field under settings-> "Api Endpoints" -> "Custom API"
 6. After you've insert it into the field, press the test button, and "hello world" should appear next to the button.
 
 [ ] Enable permanent sharing of zrok url [docs](https://docs.zrok.io/docs/guides/docker-share/#permanent-public-share) (requires Docker)

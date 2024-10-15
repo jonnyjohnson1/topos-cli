@@ -1,22 +1,20 @@
 # api_routes.py
-
 import os
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 import requests
 import signal
-import tkinter as tk
-from tkinter import filedialog
+import glob
+import sys
+from pydantic import BaseModel
 from topos.FC.conversation_cache_manager import ConversationCacheManager
-router = APIRouter()
-
+from topos.services.messages.group_management_service import GroupManagementService
+from topos.services.messages.missed_message_service import MissedMessageService
 from collections import Counter, OrderedDict, defaultdict
 from pydantic import BaseModel
-
 from ..generations.chat_gens import LLMController
 from ..utilities.utils import create_conversation_string
 from ..services.ontology_service.mermaid_chart import MermaidCreator
-
 import logging
 
 db_config = {
@@ -27,6 +25,19 @@ db_config = {
             "port": os.getenv("POSTGRES_PORT")
         }
 
+router = APIRouter()
+
+class MissedMessagesRequest(BaseModel):
+    user_id: str
+
+class CreateGroupRequest(BaseModel):
+    group_name: str
+    user_id: str
+
+class JoinGroupRequest(BaseModel):
+    group_id: str
+    user_id: str
+
 logging.info(f"Database configuration: {db_config}")
 
 use_postgres = True
@@ -34,7 +45,7 @@ if use_postgres:
     cache_manager = ConversationCacheManager(use_postgres=True, db_config=db_config)
 else:
     cache_manager = ConversationCacheManager()
-    
+
 class ConversationIDRequest(BaseModel):
     conversation_id: str
 
@@ -58,7 +69,7 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
     conversation_id = request.conversation_id
     # load conversation
     conv_data = cache_manager.load_from_cache(conversation_id)
-    
+
     if conv_data is None:
         raise HTTPException(status_code=404, detail="Conversation not found in cache")
     # Initialize counters
@@ -118,7 +129,7 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
                     for entity in entities:
                         entity_text_counter[str(entity['text'])] += 1
                         entity_text_counter_per_user[user][str(entity['text'])] += 1
-                
+
                 emotions = content['commenter']['base_analysis']['emo_27']
                 for emotion in emotions:
                     emotion_counter[emotion['label']] += 1
@@ -158,7 +169,7 @@ async def chat_conversation_analysis(request: ConversationIDRequest):
         'emotions27': emotion_dict
     }
 
-   
+
     # Return the conversation or any other response needed
     return {"conversation": conversation}
 
@@ -175,7 +186,7 @@ async def conv_to_image(request: ConversationIDRequest):
     if conv_data is None:
         raise HTTPException(status_code=404, detail="Conversation not found in cache")
 
-    
+
     # model specifications
     # TODO UPDATE SO ITS NOT HARDCODED
     model = "dolphin-llama3"
@@ -218,7 +229,7 @@ async def conv_to_image(request: ConversationIDRequest):
     print(f"\t[ {system_path}")
     bytes_list = read_file_as_bytes(file_name)
     media_type = "application/json"
-    
+
     # return the image
     return {"file_name" : file_name, "bytes": bytes_list, "prompt": txt_to_img_prompt}
 
@@ -276,7 +287,7 @@ Generate options based on these parameters.
 
     next_message_options = llm_client.generate_response(system_prompt, query, temperature=0)
     print(next_message_options)
-    
+
     # return the options
     return {"response" : next_message_options}
 
@@ -318,13 +329,13 @@ async def create_next_messages(request: ConversationTopicsRequest):
 @router.post("/list_models")
 async def list_models(provider: str = 'ollama', api_key: str = 'ollama'):
     # Define the URLs for different providers
-    
+
     list_models_urls = {
         'ollama': "http://localhost:11434/api/tags",
         'openai': "https://api.openai.com/v1/models",
         'groq': "https://api.groq.com/openai/v1/models"
     }
-    
+
     if provider not in list_models_urls:
         raise HTTPException(status_code=400, detail="Unsupported provider")
 
@@ -356,20 +367,43 @@ async def test():
 
 @router.post("/get_files")
 async def get_files():
-    root = tk.Tk()
-    root.withdraw()
-    filetypes = [("PNG files", "*.png"), ("JPG files", "*.jpg"), ("JPEG files", "*.jpeg")]
-    file_path = filedialog.askopenfilename(title="Select an image file",
-                                       filetypes=(filetypes))
-    print(file_path)
-    
+    # Get the current working directory
+    current_dir = os.getcwd()
+
+    # List all image files in the current directory
+    image_files = glob.glob(os.path.join(current_dir, "*.png")) + \
+                  glob.glob(os.path.join(current_dir, "*.jpg")) + \
+                  glob.glob(os.path.join(current_dir, "*.jpeg"))
+
+    if not image_files:
+        return {"error": "No image files found in the current directory."}
+
+    # Print available files
+    print("Available image files:")
+    for i, file in enumerate(image_files, 1):
+        print(f"{i}. {os.path.basename(file)}")
+
+    # Get user input
+    while True:
+        try:
+            choice = int(input("Enter the number of the file you want to select: "))
+            if 1 <= choice <= len(image_files):
+                file_path = image_files[choice - 1]
+                break
+            else:
+                print("Invalid choice. Please try again.")
+        except ValueError:
+            print("Please enter a valid number.")
+
+    print(f"Selected file: {file_path}")
+
     # Use the os.path module
     system_path = os.path.abspath("/")
     print(system_path)
     bytes_list = read_file_as_bytes(file_path)
     media_type = "application/json"
     print(type(bytes_list))
-    return {"file_name" : [i for i in file_path], "bytes": bytes_list}
+    return {"file_name": [i for i in file_path], "bytes": bytes_list}
 
 def read_file_as_bytes(file_path):
     try:
@@ -382,8 +416,8 @@ def read_file_as_bytes(file_path):
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
-    
-    
+
+
 class MermaidChartPayload(BaseModel):
     message: str = None
     conversation_id: str
@@ -403,12 +437,12 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
         provider = payload.provider# defaults to ollama right now
         api_key = payload.api_key
         temperature = payload.temperature
-        
+
         llm_client = LLMController(model_name=model, provider=provider, api_key=api_key)
 
         mermaid_generator = MermaidCreator(llm_client)
-       
-        
+
+
 
         if full_conversation:
             cache_manager = cache_manager
@@ -435,3 +469,25 @@ async def generate_mermaid_chart(payload: MermaidChartPayload):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@router.post("/chat/missed-messages")
+async def get_missed_messages(request: MissedMessagesRequest):
+    missed_message_service = MissedMessageService(db_config)
+    group_management_service = GroupManagementService(db_config)
+    return await missed_message_service.get_missed_messages(user_id=request.user_id, group_management_service=group_management_service)
+
+@router.post("/chat/create-group")
+async def create_group(request: CreateGroupRequest):
+    group_management_service = GroupManagementService(db_config)
+    group_id = group_management_service.create_group(request.group_name)
+    group_management_service.add_user_to_group(request.user_id, group_id)
+    return {"group_id": group_id}
+
+@router.post("/chat/join-group")
+async def join_group(request: JoinGroupRequest):
+    group_management_service = GroupManagementService(db_config)
+    if group_management_service.get_group_by_id(request.group_id):
+        group_management_service.add_user_to_group(request.user_id, request.group_id)
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=404, detail="Group not found")
