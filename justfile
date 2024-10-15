@@ -1,9 +1,9 @@
 build:
     poetry build
     pip install .
-    
+
 run:
-    topos run
+    nix run .
 
 zrok:
     zrok share public http://0.0.0.0:13341
