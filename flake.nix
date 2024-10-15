@@ -118,7 +118,7 @@
                         # models manually in the UI.
                         #
                         # Search for the models here: https://ollama.com/library
-                        models = [ "phi3" ];
+                        models = [ "dolphin-llama3" ];
                     };
 
                     postgres."pg" = {
