@@ -62,3 +62,6 @@ def generate_hex_code(n_digits):
 
 def generate_deci_code(n_digits):
     return ''.join(random.choice('0123456789') for _ in range(n_digits))
+
+def generate_group_name() -> str:
+    return 'GRP-'.join(random.choices(string.ascii_uppercase + string.digits, k=8))
