@@ -1,17 +1,13 @@
 import os
-from fastapi import APIRouter, HTTPException, Request
-import requests
-from topos.FC.conversation_cache_manager import ConversationCacheManager
-from collections import Counter, OrderedDict, defaultdict
-from pydantic import BaseModel
-
-from ..utilities.utils import create_conversation_string
-from ..services.classification_service.base_analysis import base_text_classifier, base_token_classifier
-
 import json
 import time
 from datetime import datetime
 import logging
+
+from fastapi import APIRouter, HTTPException, Request
+from topos.FC.conversation_cache_manager import ConversationCacheManager
+
+from ....services.classification_service.base_analysis import base_text_classifier, base_token_classifier
 
 router = APIRouter()
 

@@ -14,7 +14,15 @@ def get_python_command():
 def get_config_path():
     config_path = os.getenv('TOPOS_CONFIG_PATH')
     if not config_path:
-        raise EnvironmentError("TOPOS_CONFIG_PATH environment variable is not set")
+        print("TOPOS_CONFIG_PATH environment variable is not set")
+        print("trying to locate in root directory")
+        path = get_root_directory() + "/config.yaml"
+        print(f"{path} is directory: {os.path.isfile(path)}")
+        if os.path.isfile(path):
+            print(f"{path} config found in root directory")
+            config_path = path
+        else:
+            raise EnvironmentError("TOPOS_CONFIG_PATH environment variable is not set AND no config.yaml found")
     return config_path
 
 def get_root_directory():
