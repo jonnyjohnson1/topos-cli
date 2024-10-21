@@ -2,7 +2,7 @@
 import re
 
 from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
-from topos.generations.chat_gens import LLMController
+from topos.services.generations_service.chat_gens import LLMController
 
 class MermaidCreator:
     def __init__(self, LLMController: LLMController):

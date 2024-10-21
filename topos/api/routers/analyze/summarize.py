@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import json
 import os
 
-from ....generations.chat_gens import LLMController
+from ....services.generations_service.chat_gens import LLMController
 from ....utilities.utils import create_conversation_string
 
 # cache database

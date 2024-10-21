@@ -7,7 +7,7 @@ import pprint
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ....generations.chat_gens import LLMController
+from ....services.generations_service.chat_gens import LLMController
 from ....models.llm_classes import vision_models
 
 from ....services.classification_service.base_analysis import base_text_classifier, base_token_classifier
