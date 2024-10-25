@@ -1,7 +1,7 @@
 # ontological_feature_detection.py
 import re
 
-from topos.FC.ontological_feature_detection import OntologicalFeatureDetection
+from topos.services.ontology_service.ontological_feature_detection import OntologicalFeatureDetection
 from topos.services.generations_service.chat_gens import LLMController
 
 class MermaidCreator:

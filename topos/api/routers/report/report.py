@@ -1,7 +1,7 @@
 
 import os
 from fastapi import APIRouter, HTTPException
-from topos.FC.conversation_cache_manager import ConversationCacheManager
+from topos.services.database.conversation_cache_manager import ConversationCacheManager
 
 from collections import Counter, defaultdict
 

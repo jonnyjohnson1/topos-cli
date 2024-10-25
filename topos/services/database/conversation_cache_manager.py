@@ -231,7 +231,28 @@ class ConversationCacheManager:
         except Exception as e:
             logging.error(f"Failed to save to cache {cache_path}: {e}", exc_info=True)
 
-    def _save_to_postgres(self, conv_id, new_data):
+# Incoming conversation Data
+        # {'GDjCo7HieSN1': 
+        #     {'role': 'user', 
+        #      'timestamp': datetime.datetime(2024, 10, 25, 20, 37, 49, 881681), 
+        #      'message': 'play with me mfor a minute', 
+        #      'in_line': {
+        #          'base_analysis': {
+        #              'TIME': [{'label': 'TIME', 'text': 'a minute', 'sentiment': 0.0, 'start_position': 18, 'end_position': 26}]}
+        #          }, 
+        #      'commenter': {
+        #          'base_analysis': {
+        #              'mod_level': [{'label': 'OK', 'score': 0.2502281963825226, 'name': 'OK'}], 
+        #              'tern_sent': [{'label': 'NEU', 'score': 0.8717584609985352}], 
+        #              'emo_27': [{'label': 'neutral', 'score': 0.9581435322761536}]}
+        #          }
+        #      }}
+        
+        # conversation_table: conv_id, userid, timestamp, name, message_id, role, message
+        # utterance_token_info_table: message_id, conv_id, userid, name, role, timestamp, 'ents' <jsonb>
+        # utterance_text_info_table: message_id, conv_id, userid, name, role, timestamp, 'moderator' <jsonb>, mod_label <str>, tern_sent <jsonb>, tern_label <str>, emo_27 <jsonb>, emo_27_label <str>
+    
+    def _save_to_postgres(self, conv_id, new_data):    
         if self.conn is None:
             logging.error("PostgreSQL connection is not initialized")
             return
@@ -239,17 +260,79 @@ class ConversationCacheManager:
         try:
             logging.debug(f"Attempting to save data for conv_id: {conv_id}")
             with self.conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO conversation_cache (conv_id, message_data)
-                    VALUES (%s, %s::jsonb)
-                    ON CONFLICT (conv_id) DO UPDATE
-                    SET message_data = conversation_cache.message_data || EXCLUDED.message_data
-                """, (conv_id, json.dumps([new_data], default=serialize_datetime)))
+                for message_id, message_data in new_data.items():
+                    role = message_data['role']
+                    timestamp = message_data['timestamp']
+                    message = message_data['message']
+                    userid = "unknown"  # Assuming you get this from elsewhere
+                    name = "unknown"  # Assuming you get this from elsewhere
+                    
+                    # Insert conversation data
+                    cur.execute("""
+                        INSERT INTO conversation_table (message_id, conv_id, userid, timestamp, name, role, message)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (message_id) DO UPDATE
+                        SET message = EXCLUDED.message, role = EXCLUDED.role, timestamp = EXCLUDED.timestamp;
+                    """, (message_id, conv_id, userid, timestamp, name, role, message))
+                    
+                    # Insert token information (utterance_token_info_table)
+                    if 'in_line' in message_data:
+                        ents_data = message_data['in_line']['base_analysis']
+                        if len(ents_data) > 0:
+                            ents = json.dumps(ents_data)
+                            cur.execute("""
+                                INSERT INTO utterance_token_info_table (message_id, conv_id, userid, name, role, timestamp, ents)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (message_id) DO UPDATE
+                                SET ents = EXCLUDED.ents, timestamp = EXCLUDED.timestamp;
+                            """, (message_id, conv_id, userid, name, role, timestamp, ents))
+                    
+                    # Insert text analysis information (utterance_text_info_table)
+                    if 'commenter' in message_data:
+                        base_analysis = message_data['commenter']['base_analysis']
+                        mod_label = base_analysis['mod_level'][0]['label']
+                        tern_sent = json.dumps(base_analysis['tern_sent'])
+                        tern_label = base_analysis['tern_sent'][0]['label']
+                        emo_27 = json.dumps(base_analysis['emo_27'])
+                        emo_27_label = base_analysis['emo_27'][0]['label']
+
+                        cur.execute("""
+                            INSERT INTO utterance_text_info_table 
+                            (message_id, conv_id, userid, name, role, timestamp, moderator, mod_label, tern_sent, tern_label, emo_27, emo_27_label)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (message_id) DO UPDATE
+                            SET moderator = EXCLUDED.moderator, mod_label = EXCLUDED.mod_label, 
+                                tern_sent = EXCLUDED.tern_sent, tern_label = EXCLUDED.tern_label, 
+                                emo_27 = EXCLUDED.emo_27, emo_27_label = EXCLUDED.emo_27_label;
+                        """, (message_id, conv_id, userid, name, role, timestamp, 
+                            json.dumps(base_analysis['mod_level']), mod_label, tern_sent, tern_label, emo_27, emo_27_label))
+                
                 self.conn.commit()
                 logging.info(f"Successfully saved data for conv_id: {conv_id}")
         except Exception as e:
             logging.error(f"Failed to save to PostgreSQL for conv_id {conv_id}: {e}", exc_info=True)
             self.conn.rollback()
+            
+    # def _save_to_postgres(self, conv_id, new_data):    
+    #     if self.conn is None:
+    #         logging.error("PostgreSQL connection is not initialized")
+    #         return
+
+    #     try:
+    #         logging.debug(f"Attempting to save data for conv_id: {conv_id}")
+    #         with self.conn.cursor() as cur:
+    #             print("POSTGRES DATA", new_data)
+    #             cur.execute("""
+    #                 INSERT INTO conversation_cache (conv_id, message_data)
+    #                 VALUES (%s, %s::jsonb)
+    #                 ON CONFLICT (conv_id) DO UPDATE
+    #                 SET message_data = conversation_cache.message_data || EXCLUDED.message_data
+    #             """, (conv_id, json.dumps([new_data], default=serialize_datetime)))
+    #             self.conn.commit()
+    #             logging.info(f"Successfully saved data for conv_id: {conv_id}")
+    #     except Exception as e:
+    #         logging.error(f"Failed to save to PostgreSQL for conv_id {conv_id}: {e}", exc_info=True)
+    #         self.conn.rollback()
 
     def clear_cache(self):
         """Clear the cache directory or PostgreSQL table."""

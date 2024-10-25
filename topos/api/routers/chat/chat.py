@@ -15,7 +15,7 @@ from ....services.loggers.process_logger import ProcessLogger
 
 
 # cache database
-from topos.FC.conversation_cache_manager import ConversationCacheManager
+from topos.services.database.conversation_cache_manager import ConversationCacheManager
 
 router = APIRouter()
 

@@ -42,23 +42,43 @@ in pkgs.mkShell {
 
     # Set up the test database, role, and tables
     psql -d $POSTGRES_DB <<SQL | tee -a $LOGFILE
-    CREATE TABLE IF NOT EXISTS conversation_cache (
-        conv_id TEXT PRIMARY KEY,
-        message_data JSONB NOT NULL
+    
+    -- Create the conversation table
+    CREATE TABLE IF NOT EXISTS conversation_table (
+        message_id VARCHAR PRIMARY KEY,
+        conv_id VARCHAR NOT NULL,
+        userid VARCHAR NOT NULL,
+        timestamp TIMESTAMP NOT NULL,
+        name VARCHAR,
+        role VARCHAR NOT NULL,
+        message TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS entities (
-        id TEXT PRIMARY KEY,
-        label TEXT NOT NULL,
-        properties JSONB
+    -- Create the utterance_token_info table
+    CREATE TABLE IF NOT EXISTS utterance_token_info_table (
+        message_id VARCHAR PRIMARY KEY,
+        conv_id VARCHAR NOT NULL,
+        userid VARCHAR NOT NULL,
+        name VARCHAR,
+        role VARCHAR NOT NULL,
+        timestamp TIMESTAMP NOT NULL,
+        ents JSONB
     );
 
-    CREATE TABLE IF NOT EXISTS relations (
-        source_id TEXT,
-        relation_type TEXT,
-        target_id TEXT,
-        properties JSONB,
-        PRIMARY KEY (source_id, relation_type, target_id)
+    -- Create the utterance_text_info table
+    CREATE TABLE IF NOT EXISTS utterance_text_info_table (
+        message_id VARCHAR PRIMARY KEY,
+        conv_id VARCHAR NOT NULL,
+        userid VARCHAR NOT NULL,
+        name VARCHAR,
+        role VARCHAR NOT NULL,
+        timestamp TIMESTAMP NOT NULL,
+        moderator JSONB,
+        mod_label VARCHAR,
+        tern_sent JSONB,
+        tern_label VARCHAR,
+        emo_27 JSONB,
+        emo_27_label VARCHAR
     );
 
     CREATE ROLE $POSTGRES_USER WITH LOGIN PASSWORD '$POSTGRES_PASSWORD';
