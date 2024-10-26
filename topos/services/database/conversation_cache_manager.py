@@ -71,40 +71,42 @@ class ConversationCacheManager:
 
         try:
             with self.conn.cursor() as cur:
+                # Check structure of conversation_table
                 cur.execute("""
                     SELECT column_name, data_type, is_nullable
                     FROM information_schema.columns
-                    WHERE table_name = 'conversation_cache'
+                    WHERE table_name = 'conversation'
                 """)
-                columns = cur.fetchall()
-                logging.info("Current table structure:")
-                for column in columns:
+                conversation_columns = cur.fetchall()
+                logging.info("conversation structure:")
+                for column in conversation_columns:
                     logging.info(f"Column: {column[0]}, Type: {column[1]}, Nullable: {column[2]}")
+
+                # Check structure of utterance_token_info_table
+                cur.execute("""
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'utterance_token_info'
+                """)
+                token_columns = cur.fetchall()
+                logging.info("utterance_token_info structure:")
+                for column in token_columns:
+                    logging.info(f"Column: {column[0]}, Type: {column[1]}, Nullable: {column[2]}")
+
+                # Check structure of utterance_text_info_table
+                cur.execute("""
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'utterance_text_info'
+                """)
+                text_columns = cur.fetchall()
+                logging.info("utterance_text_info structure:")
+                for column in text_columns:
+                    logging.info(f"Column: {column[0]}, Type: {column[1]}, Nullable: {column[2]}")
+        
         except Exception as e:
             logging.error(f"Failed to check table structure: {e}", exc_info=True)
-
-    # def _ensure_table_structure(self):
-    #     if self.conn is None:
-    #         logging.error("PostgreSQL connection is not initialized")
-    #         raise ConnectionError("PostgreSQL connection is not initialized")
-
-    #     try:
-    #         logging.debug("Ensuring table structure exists")
-    #         with self.conn.cursor() as cur:
-    #             cur.execute("DROP TABLE IF EXISTS conversation_cache")
-    #             cur.execute("""
-    #                 CREATE TABLE conversation_cache (
-    #                     conv_id TEXT PRIMARY KEY,
-    #                     message_data JSONB NOT NULL
-    #                 )
-    #             """)
-    #         self.conn.commit()
-    #         logging.info("Table structure ensured successfully")
-    #     except Exception as e:
-    #         logging.error(f"Failed to ensure table structure: {e}", exc_info=True)
-    #         if self.conn:
-    #             self.conn.rollback()
-    #         raise
+            
 
     def _ensure_table_exists(self):
         if self.conn is None:
@@ -112,23 +114,93 @@ class ConversationCacheManager:
             raise ConnectionError("PostgreSQL connection is not initialized")
 
         try:
-            logging.debug("Checking if conversation_cache table exists")
+            logging.debug("Checking if necessary tables exist")
             with self.conn.cursor() as cur:
+                # Check for conversation_table existence
                 cur.execute("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables
-                        WHERE table_name = 'conversation_cache'
+                        WHERE table_name = 'conversation'
                     )
                 """)
-                table_exists = cur.fetchone()[0]
+                conversation_table_exists = cur.fetchone()[0]
 
-                if not table_exists:
-                    logging.info("conversation_cache table does not exist, creating it")
-                    # self._ensure_table_structure()
-                else:
-                    logging.debug("conversation_cache table already exists")
+                if not conversation_table_exists:
+                    logging.info("conversation does not exist, creating it")
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS conversation (
+                            message_id VARCHAR PRIMARY KEY,
+                            conv_id VARCHAR NOT NULL,
+                            userid VARCHAR NOT NULL,
+                            timestamp TIMESTAMP NOT NULL,
+                            name VARCHAR,
+                            role VARCHAR NOT NULL,
+                            message TEXT NOT NULL
+                        );
+                    """)
+                    logging.info("conversation created")
+
+                # Check for utterance_token_info existence
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_name = 'utterance_token_info'
+                    )
+                """)
+                token_table_exists = cur.fetchone()[0]
+
+                if not token_table_exists:
+                    logging.info("utterance_token_info does not exist, creating it")
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS utterance_token_info (
+                            message_id VARCHAR PRIMARY KEY,
+                            conv_id VARCHAR NOT NULL,
+                            userid VARCHAR NOT NULL,
+                            name VARCHAR,
+                            role VARCHAR NOT NULL,
+                            timestamp TIMESTAMP NOT NULL,
+                            ents JSONB
+                        );
+                    """)
+                    logging.info("utterance_token_info created")
+
+                # Check for utterance_text_info existence
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_name = 'utterance_text_info'
+                    )
+                """)
+                text_table_exists = cur.fetchone()[0]
+
+                if not text_table_exists:
+                    logging.info("utterance_text_info does not exist, creating it")
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS utterance_text_info (
+                            message_id VARCHAR PRIMARY KEY,
+                            conv_id VARCHAR NOT NULL,
+                            userid VARCHAR NOT NULL,
+                            name VARCHAR,
+                            role VARCHAR NOT NULL,
+                            timestamp TIMESTAMP NOT NULL,
+                            moderator JSONB,
+                            mod_label VARCHAR,
+                            tern_sent JSONB,
+                            tern_label VARCHAR,
+                            emo_27 JSONB,
+                            emo_27_label VARCHAR
+                        );
+                    """)
+                    logging.info("utterance_text_info created")
+
+                logging.debug("All necessary tables exist or were successfully created")
+
+            # Commit the table creation if any were made
+            self.conn.commit()
+
         except Exception as e:
-            logging.error(f"Failed to check or create table: {e}", exc_info=True)
+            logging.error(f"Failed to check or create tables: {e}", exc_info=True)
+            self.conn.rollback()
             raise
 
     def _get_cache_path(self, conv_id, prefix=""):
@@ -170,6 +242,30 @@ class ConversationCacheManager:
                 return None
         return None
 
+    def load_utterance_token_info(self, conv_id):
+        # Query to load token classification data (utterance_token_info_table)
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT message_id, conv_id, userid, name, role, timestamp, ents
+                FROM utterance_token_info
+                WHERE conv_id = %s;
+            """, (conv_id,))
+            token_data = cur.fetchall()
+        return token_data
+    
+    
+    def load_utterance_text_info(self, conv_id):
+        # Query to load text classification data (utterance_text_info_table)
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT message_id, conv_id, userid, name, role, timestamp, moderator, mod_label, tern_sent, tern_label, emo_27, emo_27_label
+                FROM utterance_text_info
+                WHERE conv_id = %s;
+            """, (conv_id,))
+            text_data = cur.fetchall()
+        return text_data
+        
+        
     def _load_from_postgres(self, conv_id):
         try:
             logging.debug(f"Attempting to load data for conv_id: {conv_id}")
@@ -231,7 +327,9 @@ class ConversationCacheManager:
         except Exception as e:
             logging.error(f"Failed to save to cache {cache_path}: {e}", exc_info=True)
 
-# Incoming conversation Data
+        
+    def _save_to_postgres(self, conv_id, new_data): 
+        # Incoming conversation Data
         # {'GDjCo7HieSN1': 
         #     {'role': 'user', 
         #      'timestamp': datetime.datetime(2024, 10, 25, 20, 37, 49, 881681), 
@@ -251,8 +349,7 @@ class ConversationCacheManager:
         # conversation_table: conv_id, userid, timestamp, name, message_id, role, message
         # utterance_token_info_table: message_id, conv_id, userid, name, role, timestamp, 'ents' <jsonb>
         # utterance_text_info_table: message_id, conv_id, userid, name, role, timestamp, 'moderator' <jsonb>, mod_label <str>, tern_sent <jsonb>, tern_label <str>, emo_27 <jsonb>, emo_27_label <str>
-    
-    def _save_to_postgres(self, conv_id, new_data):    
+       
         if self.conn is None:
             logging.error("PostgreSQL connection is not initialized")
             return
@@ -269,7 +366,7 @@ class ConversationCacheManager:
                     
                     # Insert conversation data
                     cur.execute("""
-                        INSERT INTO conversation_table (message_id, conv_id, userid, timestamp, name, role, message)
+                        INSERT INTO conversation (message_id, conv_id, userid, timestamp, name, role, message)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (message_id) DO UPDATE
                         SET message = EXCLUDED.message, role = EXCLUDED.role, timestamp = EXCLUDED.timestamp;
@@ -281,7 +378,7 @@ class ConversationCacheManager:
                         if len(ents_data) > 0:
                             ents = json.dumps(ents_data)
                             cur.execute("""
-                                INSERT INTO utterance_token_info_table (message_id, conv_id, userid, name, role, timestamp, ents)
+                                INSERT INTO utterance_token_info (message_id, conv_id, userid, name, role, timestamp, ents)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                                 ON CONFLICT (message_id) DO UPDATE
                                 SET ents = EXCLUDED.ents, timestamp = EXCLUDED.timestamp;
@@ -297,7 +394,7 @@ class ConversationCacheManager:
                         emo_27_label = base_analysis['emo_27'][0]['label']
 
                         cur.execute("""
-                            INSERT INTO utterance_text_info_table 
+                            INSERT INTO utterance_text_info 
                             (message_id, conv_id, userid, name, role, timestamp, moderator, mod_label, tern_sent, tern_label, emo_27, emo_27_label)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (message_id) DO UPDATE
@@ -313,26 +410,6 @@ class ConversationCacheManager:
             logging.error(f"Failed to save to PostgreSQL for conv_id {conv_id}: {e}", exc_info=True)
             self.conn.rollback()
             
-    # def _save_to_postgres(self, conv_id, new_data):    
-    #     if self.conn is None:
-    #         logging.error("PostgreSQL connection is not initialized")
-    #         return
-
-    #     try:
-    #         logging.debug(f"Attempting to save data for conv_id: {conv_id}")
-    #         with self.conn.cursor() as cur:
-    #             print("POSTGRES DATA", new_data)
-    #             cur.execute("""
-    #                 INSERT INTO conversation_cache (conv_id, message_data)
-    #                 VALUES (%s, %s::jsonb)
-    #                 ON CONFLICT (conv_id) DO UPDATE
-    #                 SET message_data = conversation_cache.message_data || EXCLUDED.message_data
-    #             """, (conv_id, json.dumps([new_data], default=serialize_datetime)))
-    #             self.conn.commit()
-    #             logging.info(f"Successfully saved data for conv_id: {conv_id}")
-    #     except Exception as e:
-    #         logging.error(f"Failed to save to PostgreSQL for conv_id {conv_id}: {e}", exc_info=True)
-    #         self.conn.rollback()
 
     def clear_cache(self):
         """Clear the cache directory or PostgreSQL table."""
@@ -370,20 +447,3 @@ class ConversationCacheManager:
         if self.conn:
             self.conn.close()
             logging.debug("Closed PostgreSQL connection")
-
-def _ensure_table_exists(self):
-    try:
-        with self.conn.cursor() as cur:
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = 'conversation_cache'
-                )
-            """)
-            table_exists = cur.fetchone()[0]
-
-            if not table_exists:
-                self._init_postgres()
-    except Exception as e:
-        logging.error(f"Failed to check or create table: {e}")
-        raise

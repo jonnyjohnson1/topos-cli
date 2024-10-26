@@ -44,7 +44,7 @@ in pkgs.mkShell {
     psql -d $POSTGRES_DB <<SQL | tee -a $LOGFILE
     
     -- Create the conversation table
-    CREATE TABLE IF NOT EXISTS conversation_table (
+    CREATE TABLE IF NOT EXISTS conversation (
         message_id VARCHAR PRIMARY KEY,
         conv_id VARCHAR NOT NULL,
         userid VARCHAR NOT NULL,
@@ -55,7 +55,7 @@ in pkgs.mkShell {
     );
 
     -- Create the utterance_token_info table
-    CREATE TABLE IF NOT EXISTS utterance_token_info_table (
+    CREATE TABLE IF NOT EXISTS utterance_token_info (
         message_id VARCHAR PRIMARY KEY,
         conv_id VARCHAR NOT NULL,
         userid VARCHAR NOT NULL,
@@ -66,7 +66,7 @@ in pkgs.mkShell {
     );
 
     -- Create the utterance_text_info table
-    CREATE TABLE IF NOT EXISTS utterance_text_info_table (
+    CREATE TABLE IF NOT EXISTS utterance_text_info (
         message_id VARCHAR PRIMARY KEY,
         conv_id VARCHAR NOT NULL,
         userid VARCHAR NOT NULL,
