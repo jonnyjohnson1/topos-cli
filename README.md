@@ -2,15 +2,30 @@
   <img src="https://github.com/jonnyjohnson1/topos-cli/blob/main/topos/assets/topos_blk_rounded.png" style="width: 70px; height: 70px;" alt="Private LLMs" />
 </p>
 <p align="center">
-  <em>Private AI Backend Service</em>
+  <em>Private, Personal AI Backend Service</em>
 </p>
 
 ---
 
 # Topos
-A personal intelligence service, using your own computer to power private conversations with friends, family, and coworkers, collect/store your own private data, and use AI privately. Runs  great with the [chat arena](https://github.com/jonnyjohnson1/chat-arena) app available on desktop and mobile.
+Topos is a private, personal AI and database management service.
+It comes as an easy-to-install server for your AI apps to connect to.
 
-Tech: ollama, postgres, FastAPI, nixOS, huggingface-transformers
+It is a personal intelligence service, using your own computer to power private conversations with friends, family, and coworkers, collect/store your own private data, and use AI privately. 
+
+Apps Using Topos:
+- [chat arena](https://github.com/jonnyjohnson1/chat-arena) #desktop #mobile
+
+Tech: nixOS, ollama, postgres, FastAPI, huggingface-transformers
+
+<p align="center">
+  <img src="https://github.com/jonnyjohnson1/topos-cli/blob/main/topos/assets/tui.png" style="zoom:67%;" alt="Terminal User Interface" />
+</p>
+<p align="center">
+  <em>Runs the Terminal User Interface provided by [F1bonacc1](https://github.com/F1bonacc1/process-compose)</em>
+</p>
+
+---
 
 ## (MacOS) Easy Install With .dmg
 *(Experimental)*: This is new, and should work on most MacOS machines!
@@ -44,6 +59,14 @@ nix build .#topos
 run built binary
 ```
 ./result/bin/topos
+```
+
+(You might also try this)
+```
+nix build --extra-experimental-features nix-command --extra-experimental-features flakes --show-trace
+```
+```
+./result/bin/services-flake-topos
 ```
 
 ### Dev Shell

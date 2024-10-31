@@ -135,24 +135,42 @@
                           CREATE USER ${envVars.POSTGRES_USER} WITH SUPERUSER PASSWORD '${envVars.POSTGRES_PASSWORD}';
                         '';
                         after = ''
-                          CREATE TABLE IF NOT EXISTS conversation_cache (
-                              conv_id TEXT PRIMARY KEY,
-                              message_data JSONB NOT NULL
-                          );
+                          CREATE TABLE IF NOT EXISTS conversation (
+                            message_id VARCHAR PRIMARY KEY,
+                            conv_id VARCHAR NOT NULL,
+                            userid VARCHAR NOT NULL,
+                            timestamp TIMESTAMP NOT NULL,
+                            name VARCHAR,
+                            role VARCHAR NOT NULL,
+                            message TEXT NOT NULL
+                        );
 
-                          CREATE TABLE IF NOT EXISTS entities (
-                              id TEXT PRIMARY KEY,
-                              label TEXT NOT NULL,
-                              properties JSONB
-                          );
+                        -- Create the utterance_token_info table
+                        CREATE TABLE IF NOT EXISTS utterance_token_info (
+                            message_id VARCHAR PRIMARY KEY,
+                            conv_id VARCHAR NOT NULL,
+                            userid VARCHAR NOT NULL,
+                            name VARCHAR,
+                            role VARCHAR NOT NULL,
+                            timestamp TIMESTAMP NOT NULL,
+                            ents JSONB
+                        );
 
-                          CREATE TABLE IF NOT EXISTS relations (
-                              source_id TEXT,
-                              relation_type TEXT,
-                              target_id TEXT,
-                              properties JSONB,
-                              PRIMARY KEY (source_id, relation_type, target_id)
-                          );
+                        -- Create the utterance_text_info table
+                        CREATE TABLE IF NOT EXISTS utterance_text_info (
+                            message_id VARCHAR PRIMARY KEY,
+                            conv_id VARCHAR NOT NULL,
+                            userid VARCHAR NOT NULL,
+                            name VARCHAR,
+                            role VARCHAR NOT NULL,
+                            timestamp TIMESTAMP NOT NULL,
+                            moderator JSONB,
+                            mod_label VARCHAR,
+                            tern_sent JSONB,
+                            tern_label VARCHAR,
+                            emo_27 JSONB,
+                            emo_27_label VARCHAR
+                        );
 
                           GRANT ALL PRIVILEGES ON DATABASE ${envVars.POSTGRES_DB} TO ${envVars.POSTGRES_USER};
                           GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${envVars.POSTGRES_USER};
