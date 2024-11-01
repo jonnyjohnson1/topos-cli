@@ -22,3 +22,8 @@ python:
 
 dmg:
     create-dmg topos.app --volicon "topos/assets/topos_blk_rounded.png" --icon "topos/assets/topos_blk_rounded.png"
+
+stoppg:
+    export PGDATA=$(pwd)/pgdata
+    echo "Stopping any existing PostgreSQL server..."
+    pg_ctl -D "$PGDATA" stop || echo "No existing server to stop."

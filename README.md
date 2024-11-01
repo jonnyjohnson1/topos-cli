@@ -80,6 +80,13 @@ topos run
 nix develop .#poetry
 ```
 
+## Install Tips
+
+### POSTGRES 
+- If postgres is already running, running the bin fails, shut it down first.
+- Nix will manage postgres' start/stop function itself when you use it, but if you have started the database elsewhere, it won't be able to manage it, and will fail to start up.
+
+
 ## Install Instructions
 requires `brew install just`
 requires `brew install poetry`

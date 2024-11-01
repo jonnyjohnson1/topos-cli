@@ -68,7 +68,7 @@
 
             configFile = pkgs.copyPathToStore ./config.yaml;
             yq = pkgs.yq-go;
-
+            
             kafkaPreStartup = ''
             echo "Kafka is ready. Creating topic..."
             ${pkgs.apacheKafka}/bin/kafka-topics.sh --create --topic chat_topic --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1 --if-not-exists
