@@ -5,7 +5,7 @@ from datetime import datetime
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
-from topos.FC.conversation_cache_manager import ConversationCacheManager
+from topos.services.database.conversation_cache_manager import ConversationCacheManager
 
 from ....services.classification_service.base_analysis import base_text_classifier, base_token_classifier
 

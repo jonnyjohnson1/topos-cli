@@ -3,7 +3,7 @@ import json
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from topos.FC.conversation_cache_manager import ConversationCacheManager
+from topos.services.database.conversation_cache_manager import ConversationCacheManager
 
 from ....services.generations_service.chat_gens import LLMController
 from ....utilities.utils import create_conversation_string

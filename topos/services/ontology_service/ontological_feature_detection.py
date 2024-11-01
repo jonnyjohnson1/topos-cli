@@ -6,7 +6,7 @@ from collections import deque
 import nltk
 import spacy
 import warnings
-from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+from transformers import AutoTokenizer, AutoModelForTokenClassification
 from datetime import datetime
 
 from topos.services.database.app_state import AppState

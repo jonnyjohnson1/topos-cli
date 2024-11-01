@@ -16,8 +16,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Union
-from topos.channel.debatesim import DebateSimulator
-from topos.FC.conversation_cache_manager import ConversationCacheManager
+from topos.services.database.conversation_cache_manager import ConversationCacheManager
 
 
 load_dotenv()  # Load environment variables

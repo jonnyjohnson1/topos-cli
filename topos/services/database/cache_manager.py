@@ -1,7 +1,3 @@
-# cache_manager.py
-
-#(c)2024 chris forrester - free for all license, no warranty or liability
-
 import os
 import pickle
 import hashlib
