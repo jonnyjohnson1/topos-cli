@@ -20,7 +20,6 @@ class MissedMessagesRequest(BaseModel):
 KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'
 KAFKA_TOPIC = 'chat_topic'
 
-
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
