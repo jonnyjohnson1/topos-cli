@@ -3,8 +3,8 @@ import datetime
 import json
 import os
 
-from typing import Dict, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from typing import Dict, List
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 from fastapi.concurrency import asynccontextmanager
 from topos.services.messages.group_management_service import GroupManagementService
@@ -220,9 +220,9 @@ async def get_missed_messages(request: MissedMessagesRequest):
     missed_message_service = MissedMessageService()
     return await missed_message_service.get_missed_messages(user_id=request.user_id,group_management_service=group_management_service)
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=13394)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=13394)
 
 
 """ Message JSON Schema

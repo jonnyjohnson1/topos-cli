@@ -34,7 +34,7 @@ def main():
         """
         # import chat_api
         from .chat_api import api
-        api.start_chat()
+        api.start_messenger_server()
     
     if args.command == 'zrok':
         """

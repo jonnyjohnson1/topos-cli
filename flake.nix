@@ -172,6 +172,28 @@
                             emo_27_label VARCHAR
                         );
 
+                        CREATE TABLE IF NOT EXISTS groups (
+                              group_id TEXT PRIMARY KEY,
+                              group_name TEXT NOT NULL UNIQUE
+                          );
+
+                          CREATE TABLE IF NOT EXISTS users (
+                              user_id TEXT PRIMARY KEY,
+                              username TEXT NOT NULL UNIQUE,
+                              last_seen_online TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                          );
+
+                          CREATE TABLE IF NOT EXISTS user_groups (
+                              user_id TEXT,
+                              group_id TEXT,
+                              FOREIGN KEY (user_id) REFERENCES users (user_id),
+                              FOREIGN KEY (group_id) REFERENCES groups (group_id),
+                              PRIMARY KEY (user_id, group_id)
+                          );
+
+                          CREATE INDEX IF NOT EXISTS idx_user_groups_user_id ON user_groups (user_id);
+                          CREATE INDEX IF NOT EXISTS idx_user_groups_group_id ON user_groups (group_id);
+
                           GRANT ALL PRIVILEGES ON DATABASE ${envVars.POSTGRES_DB} TO ${envVars.POSTGRES_USER};
                           GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${envVars.POSTGRES_USER};
                           GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${envVars.POSTGRES_USER};
