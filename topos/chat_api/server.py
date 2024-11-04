@@ -1,14 +1,15 @@
 import asyncio
 import datetime
 import json
+import os
+
 from typing import Dict, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 from fastapi.concurrency import asynccontextmanager
-from services.group_management_service import GroupManagementService
-from services.missed_message_service import MissedMessageService
-from services.startup.initialize_database import init_sqlite_database,ensure_file_exists
-from utils.utils import generate_deci_code, generate_group_name
+from topos.services.messages.group_management_service import GroupManagementService
+from topos.services.messages.missed_message_service import MissedMessageService
+from topos.utilities.utils import generate_deci_code, generate_group_name
 from pydantic import BaseModel
 # MissedMessageRequest model // subject to change
 class MissedMessagesRequest(BaseModel):
@@ -73,15 +74,22 @@ class ConnectionManager:
                     print(f"Sending message: {message}")
                     await connection.send_json(message)
                 print("next connection")
-        
 
-group_management_service = GroupManagementService()
+db_config = {
+            "dbname": os.getenv("POSTGRES_DB"),
+            "user": os.getenv("POSTGRES_USER"),
+            "password": os.getenv("POSTGRES_PASSWORD"),
+            "host": os.getenv("POSTGRES_HOST"),
+            "port": os.getenv("POSTGRES_PORT")
+        }
+
+group_management_service = GroupManagementService(db_params=db_config)
 manager = ConnectionManager()
 
 producer = None
 consumer = None
 
-    
+
 async def consume_messages():
     async for msg in consumer:
         # print(msg.offset)
@@ -96,8 +104,7 @@ async def lifespan(app: FastAPI):
     # Kafka producer
     global producer
     global consumer
-    ensure_file_exists("../db/user.db")
-    init_sqlite_database("../db/user.db")
+    
     producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
 
     # Kafka consumer
