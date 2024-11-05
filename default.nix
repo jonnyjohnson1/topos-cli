@@ -41,8 +41,10 @@ in pkgs.mkShell {
     sleep 2
 
     # Set up the test database, role, and tables
+    echo "Setting up the test database..."
+    # psql -U $POSTGRES_USER -c "CREATE DATABASE $POSTGRES_DB;" || echo "Database $POSTGRES_DB already exists."
+
     psql -d $POSTGRES_DB <<SQL | tee -a $LOGFILE
-    
     -- Create the conversation table
     CREATE TABLE IF NOT EXISTS conversation (
         message_id VARCHAR PRIMARY KEY,
@@ -80,6 +82,29 @@ in pkgs.mkShell {
         emo_27 JSONB,
         emo_27_label VARCHAR
     );
+
+    CREATE TABLE IF NOT EXISTS groups (
+        group_id TEXT PRIMARY KEY,
+        group_name TEXT NOT NULL UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+        user_id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        last_seen_online TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS user_groups (
+        user_id TEXT,
+        group_id TEXT,
+        FOREIGN KEY (user_id) REFERENCES users (user_id),
+        FOREIGN KEY (group_id) REFERENCES groups (group_id),
+        PRIMARY KEY (user_id, group_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_groups_user_id ON user_groups (user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_groups_group_id ON user_groups (group_id);
+
 
     CREATE ROLE $POSTGRES_USER WITH LOGIN PASSWORD '$POSTGRES_PASSWORD';
     GRANT ALL PRIVILEGES ON DATABASE $POSTGRES_DB TO $POSTGRES_USER;

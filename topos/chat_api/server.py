@@ -119,6 +119,7 @@ async def lifespan(app: FastAPI):
     # we need to keep a reference of this task alive else it will stop the consume task, there has to be a live refference for this to work
     consume_task = asyncio.create_task(consume_messages())
     yield
+    
     # Clean up the ML models and release the resources
     consume_task.cancel()
     await producer.stop()
@@ -134,6 +135,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
+            print(data)
             if data:
                 payload = json.loads(data)
                 print(payload)

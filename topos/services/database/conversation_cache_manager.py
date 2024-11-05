@@ -355,7 +355,7 @@ class ConversationCacheManager:
             return
 
         try:
-            logging.debug(f"Attempting to save data for conv_id: {conv_id}")
+            logging.info(f"Attempting to save data for conv_id: {conv_id}")
             with self.conn.cursor() as cur:
                 for message_id, message_data in new_data.items():
                     role = message_data['role']
