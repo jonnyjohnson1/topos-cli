@@ -129,6 +129,7 @@
                       listen_addresses = "127.0.0.1";
                       # dataDir = "${dataDirBase}/pg";
                       initialDatabases = [
+                        { name = "${envVars.POSTGRES_DB}"; }
                       ];
                       
                       initialScript = {

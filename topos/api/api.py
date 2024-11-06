@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from ..config import setup_config, get_ssl_certificates
 import uvicorn
+import signal
 
 # Create the FastAPI application instance
 app = FastAPI()
@@ -52,7 +53,12 @@ def start_kafka_api():
     from ..chat_api.api import start_messenger_server
     start_messenger_server()
 
+# Global references to processes for cleanup
+process1 = None
+process2 = None
+
 def start_local_api():
+    global process1, process2
     process1 = Process(target=start_topos_api)
     process2 = Process(target=start_kafka_api)
     process1.start()
@@ -60,11 +66,21 @@ def start_local_api():
     process1.join()
     process2.join()
     
-# def start_local_api():
-#     """Function to start the API in local mode."""
-#     print("\033[92mINFO:\033[0m     API docs available at: \033[1mhttp://0.0.0.0:13341/docs\033[0m")
-#     uvicorn.run(app, host="0.0.0.0", port=13341)
+def handle_cleanup(signum, frame):
+    """Cleanup function to terminate processes on exit."""
+    print("Cleaning up processes...")
+    if process1 is not None:
+        process1.terminate()
+        process1.join()
+    if process2 is not None:
+        process2.terminate()
+        process2.join()
+    print("Processes terminated.")
+    exit(0)  # Exit the program
 
+# Register the signal handler for cleanup
+signal.signal(signal.SIGINT, handle_cleanup)
+signal.signal(signal.SIGTERM, handle_cleanup)
 
 def start_web_api():
     """Function to start the API in web mode with SSL."""

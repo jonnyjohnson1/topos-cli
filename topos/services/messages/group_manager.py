@@ -3,14 +3,60 @@ from psycopg2.extras import DictCursor
 from datetime import datetime
 from typing import List, Optional, Dict
 from topos.utilities.utils import generate_deci_code
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class GroupManagerPostgres:
     def __init__(self, db_params: Dict[str, str]):
         self.db_params = db_params
-
+        self._setup_tables()
+        
     def _get_connection(self):
         return psycopg2.connect(**self.db_params)
 
+    def _setup_tables(self):
+        """Ensures necessary tables exist with required permissions."""
+        
+        setup_sql_commands = [
+            """
+            CREATE TABLE IF NOT EXISTS groups (
+                group_id TEXT PRIMARY KEY,
+                group_name TEXT NOT NULL UNIQUE
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                last_seen_online TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS user_groups (
+                user_id TEXT,
+                group_id TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (user_id),
+                FOREIGN KEY (group_id) REFERENCES groups (group_id),
+                PRIMARY KEY (user_id, group_id)
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_user_groups_user_id ON user_groups (user_id);",
+            "CREATE INDEX IF NOT EXISTS idx_user_groups_group_id ON user_groups (group_id);",
+            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {os.getenv('POSTGRES_USER')};",
+            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO {os.getenv('POSTGRES_USER')};",
+            f"GRANT pg_read_all_data TO {os.getenv('POSTGRES_USER')};",
+            f"GRANT pg_write_all_data TO {os.getenv('POSTGRES_USER')};"
+        ]
+        
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                for command in setup_sql_commands:
+                    cur.execute(command)
+                conn.commit()
+                
     def create_group(self, group_name: str) -> str:
         group_id = generate_deci_code(6)
         with self._get_connection() as conn:

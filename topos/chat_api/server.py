@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import json
+import signal
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -118,12 +119,22 @@ async def lifespan(app: FastAPI):
     # https://stackoverflow.com/questions/46890646/asyncio-weirdness-of-task-exception-was-never-retrieved
     # we need to keep a reference of this task alive else it will stop the consume task, there has to be a live refference for this to work
     consume_task = asyncio.create_task(consume_messages())
-    yield
     
-    # Clean up the ML models and release the resources
-    consume_task.cancel()
-    await producer.stop()
-    await consumer.stop()
+    def shutdown(signal, loop):
+        print("Received exit signal", signal)
+        consume_task.cancel()
+        loop.stop()
+
+    # Add signal handler for graceful shutdown on Ctrl+C
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(signal.SIGINT, shutdown, signal.SIGINT, loop)
+    
+    try:
+        yield
+    finally:
+        consume_task.cancel()
+        await producer.stop()
+        await consumer.stop()
 
 # FastAPI app
 app = FastAPI(lifespan=lifespan)
