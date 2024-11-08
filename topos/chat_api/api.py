@@ -1,11 +1,13 @@
-import subprocess
+from fastapi import FastAPI
+from ..config import setup_config, get_ssl_certificates
+import uvicorn
 
+from .server import app as chat_app
 
-def start_chat():
+def start_messenger_server():
     """Function to start the API in local mode."""
-    # print("\033[92mINFO:\033[0m     API docs available at: \033[1mhttp://127.0.0.1:13394/docs\033[0m")
-    # subprocess.run(["python", "topos/chat_api/chat_server.py"]) # A barebones chat server 
-    subprocess.run(["uvicorn", "topos.chat_api.server:app", "--host", "0.0.0.0", "--port", "13394", "--workers", "1"])
+    print("\033[92mINFO:\033[0m     API docs available at: \033[1mhttp://127.0.0.1:13394/docs\033[0m")
+    uvicorn.run(chat_app, host="127.0.0.1", port=13394)
 
 # start through zrok
 # uvicorn main:app --host 127.0.0.1 --port 13394 & zrok expose http://localhost:13394

@@ -122,6 +122,7 @@
                     };
 
                     postgres."pg" = {
+                      # data options https://search.nixos.org/options?query=services.postgresql
                       enable = true;
                       package = pkgs.postgresql_16.withPackages (p: [ p.pgvector ]);
                       port = 5432;
@@ -130,11 +131,17 @@
                       initialDatabases = [
                         { name = "${envVars.POSTGRES_DB}"; }
                       ];
+                      
                       initialScript = {
                         before = ''
+                          CREATE EXTENSION IF NOT EXISTS vector;
                           CREATE USER ${envVars.POSTGRES_USER} WITH SUPERUSER PASSWORD '${envVars.POSTGRES_PASSWORD}';
                         '';
+
                         after = ''
+                        -- THESE CREATE TABLE STATEMENTS HERE DO NOT WORK
+                        -- THE WAY THE TABLES GET BUILT RN IS THROUGH THE PYTHON CODE _ensure_table_exists
+
                           CREATE TABLE IF NOT EXISTS conversation (
                             message_id VARCHAR PRIMARY KEY,
                             conv_id VARCHAR NOT NULL,
@@ -171,7 +178,6 @@
                             emo_27 JSONB,
                             emo_27_label VARCHAR
                         );
-
                           GRANT ALL PRIVILEGES ON DATABASE ${envVars.POSTGRES_DB} TO ${envVars.POSTGRES_USER};
                           GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${envVars.POSTGRES_USER};
                           GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${envVars.POSTGRES_USER};
@@ -179,9 +185,6 @@
 
                           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${envVars.POSTGRES_USER};
                           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${envVars.POSTGRES_USER};
-
-                          GRANT pg_read_all_data TO ${envVars.POSTGRES_USER};
-                          GRANT pg_write_all_data TO ${envVars.POSTGRES_USER};
                         '';
                       };
                     };
@@ -209,6 +212,7 @@
                 };
                 settings.processes = {
                     kafka.depends_on."zookeeper".condition = "process_healthy";
+                    kafka.depends_on.pg.condition = "process_healthy";
                     topos.depends_on.pg.condition = "process_healthy";
                     topos.depends_on.kafka.condition = "process_healthy";
                 };

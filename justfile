@@ -27,3 +27,4 @@ stoppg:
     export PGDATA=$(pwd)/pgdata
     echo "Stopping any existing PostgreSQL server..."
     pg_ctl -D "$PGDATA" stop || echo "No existing server to stop."
+    
