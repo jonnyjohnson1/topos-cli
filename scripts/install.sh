@@ -1,16 +1,5 @@
 #!/bin/bash
 
-# Find the 'topos-cli' directory
-TOPOS_CLI_DIR=$(find "$HOME" -type d -name "topos-cli" -print -quit 2>/dev/null)
-
-if [ -z "$TOPOS_CLI_DIR" ]; then
-    echo "Error: 'topos-cli' directory not found"
-    exit 1
-fi
-
-# Switch to the 'topos-cli' directory
-cd "$TOPOS_CLI_DIR"
-
 # Open a new Terminal window and run nix-shell
 # Force install nix on user's system: https://github.com/DeterminateSystems/nix-installer
 osascript <<EOF
