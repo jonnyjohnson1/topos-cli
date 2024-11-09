@@ -39,9 +39,11 @@ If nix is not installed:
     windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`
 2. Run Topos and all its dependencies:
    ```
-   nix run github:jonnyjohnson1/topos-cli
+   nix run github:jonnyjohnson1/topos-cli/v0.2.3
    ```
    This will start all services including Topos, Postgres, Kafka, and Ollama.
+
+(More nix run information https://determinate.systems/posts/nix-run/)
 
 ## Development
 Clone the repository:
@@ -133,3 +135,9 @@ Insert this url into the field under settings-> "Api Endpoints" -> "Custom API"
 [ ] Enable permanent sharing of zrok url [docs](https://docs.zrok.io/docs/guides/docker-share/#permanent-public-share) (requires Docker)
 
 ### Step 4b (ngrok): Set up web proxy
+
+
+
+## Future Setup
+[ ] Theme the TUI [docs](https://f1bonacc1.github.io/process-compose/tui/)
+[ ] Remotely connect to TUI [docs](https://f1bonacc1.github.io/process-compose/client/)
