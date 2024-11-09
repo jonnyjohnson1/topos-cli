@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import os
 from fastapi.middleware.cors import CORSMiddleware
-from topos.utilities.utils import get_root_directory
+from topos.utils.utils import get_root_directory
 
 
 def get_openai_api_key():

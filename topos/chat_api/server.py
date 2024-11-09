@@ -10,7 +10,7 @@ from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 from fastapi.concurrency import asynccontextmanager
 from topos.services.messages.group_management_service import GroupManagementService
 from topos.services.messages.missed_message_service import MissedMessageService
-from topos.utilities.utils import generate_deci_code, generate_group_name
+from topos.utils.utils import generate_deci_code, generate_group_name
 from pydantic import BaseModel
 # MissedMessageRequest model // subject to change
 class MissedMessagesRequest(BaseModel):

@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from topos.services.database.conversation_cache_manager import ConversationCacheManager
 
 from ....services.generations_service.chat_gens import LLMController
-from ....utilities.utils import create_conversation_string
+from ....utils.utils import create_conversation_string
 from ....services.ontology_service.mermaid_chart import MermaidCreator
 from ....models.models import MermaidChartPayload
 

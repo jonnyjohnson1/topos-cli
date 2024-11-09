@@ -3,7 +3,7 @@ import json
 import os
 
 from ....services.generations_service.chat_gens import LLMController
-from ....utilities.utils import create_conversation_string
+from ....utils.utils import create_conversation_string
 
 # cache database
 from topos.services.database.conversation_cache_manager import ConversationCacheManager

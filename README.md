@@ -139,5 +139,5 @@ Insert this url into the field under settings-> "Api Endpoints" -> "Custom API"
 
 
 ## Future Setup
-[ ] Theme the TUI [docs](https://f1bonacc1.github.io/process-compose/tui/)
+[ ] Theme the TUI [docs](https://f1bonacc1.github.io/process-compose/tui/)  
 [ ] Remotely connect to TUI [docs](https://f1bonacc1.github.io/process-compose/client/)

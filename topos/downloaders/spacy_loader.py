@@ -1,6 +1,6 @@
 import yaml
 import os
-from ..utilities.utils import get_config_path
+from ..utils.utils import get_config_path
 
 def download_spacy_model(model_selection):
     if model_selection == 'small':

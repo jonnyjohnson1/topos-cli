@@ -2,7 +2,7 @@ import psycopg2
 from psycopg2.extras import DictCursor
 from datetime import datetime
 from typing import List, Optional, Dict
-from topos.utilities.utils import generate_deci_code
+from topos.utils.utils import generate_deci_code
 import os
 from dotenv import load_dotenv
 

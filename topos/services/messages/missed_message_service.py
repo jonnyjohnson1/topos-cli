@@ -1,6 +1,6 @@
 from topos.services.messages.missed_message_manager import MissedMessageManager
 from topos.services.messages.group_management_service import GroupManagementService
-from topos.utilities.utils import sqlite_timestamp_to_ms
+from topos.utils.utils import sqlite_timestamp_to_ms
 
 KAFKA_TOPIC = 'chat_topic'
 

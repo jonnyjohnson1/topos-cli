@@ -4,7 +4,7 @@ import spacy
 from spacy.tokens import Token
 import yaml
 
-from topos.utilities.utils import get_config_path
+from topos.utils.utils import get_config_path
 
 # Assuming the config.yaml is in ./topos/ relative to setup.py directory
 config_path = get_config_path()
