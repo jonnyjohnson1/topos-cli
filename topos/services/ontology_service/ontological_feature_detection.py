@@ -10,7 +10,7 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification
 from datetime import datetime
 
 from topos.services.database.app_state import AppState
-from topos.utilities.utils import get_config_path
+from topos.utils.utils import get_config_path
 import os
 import yaml
 

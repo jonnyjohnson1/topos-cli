@@ -40,9 +40,21 @@ in pkgs.mkShell {
     # Wait for PostgreSQL to start
     sleep 2
 
+    set -x
+
     # Set up the test database, role, and tables
     echo "Setting up the test database..."
-    # psql -U $POSTGRES_USER -c "CREATE DATABASE $POSTGRES_DB;" || echo "Database $POSTGRES_DB already exists."
+    echo "POSTGRES_DB=$POSTGRES_DB"
+    echo "POSTGRES_USER=$POSTGRES_USER"
+    echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+    echo "POSTGRES_HOST=$POSTGRES_HOST"
+    echo "POSTGRES_PORT=$POSTGRES_PORT"
+
+    psql -U dialogues -d postgres -c "ALTER USER $POSTGRES_USER WITH SUPERUSER;"
+    
+    # Check if the database exists, create if not
+    psql -U "$POSTGRES_USER" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'" | grep -q 1 || \
+    psql -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE $POSTGRES_DB;"
 
     psql -d $POSTGRES_DB <<SQL | tee -a $LOGFILE
     -- Create the conversation table

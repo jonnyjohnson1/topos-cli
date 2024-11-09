@@ -1,6 +1,6 @@
 from ..basic_analytics.token_classifiers import get_ner
 from ..basic_analytics.text_classifiers import get_text_moderation_levels, get_text_sentiment_ternary, get_text_sentiment_27
-from ...utilities.utils import is_connected
+from ...utils.utils import is_connected
 
 def base_token_classifier(last_message):
     """

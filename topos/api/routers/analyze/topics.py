@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from topos.services.database.conversation_cache_manager import ConversationCacheManager
 
 from ....services.generations_service.chat_gens import LLMController
-from ....utilities.utils import create_conversation_string
+from ....utils.utils import create_conversation_string
 from ....models.models import ConversationTopicsRequest
 
 import logging

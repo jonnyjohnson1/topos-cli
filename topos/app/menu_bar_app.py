@@ -1,7 +1,8 @@
 from ..api import api
 from ..downloaders.spacy_loader import download_spacy_model
-from topos.utilities.utils import get_root_directory
+from topos.utils.utils import get_root_directory
 from ..config import get_ssl_certificates
+from ..utils.check_for_update import check_for_update, update_topos
 
 import requests
 import threading
@@ -50,12 +51,40 @@ def check_health(icon):
             update_status(icon, f"Error: {str(e)}", "red")
         time.sleep(5)
 
+def check_for_update():
+    # Check the latest release status from the GitHub API
+    # Returns True if an update is available, else False
+    update_is_available = check_for_update("jonnyjohnson1", "topos-cli")
+    return update_is_available
+
+def check_update_available(icon):
+    while icon.visible:
+        if check_for_update():
+            update_status(icon, "Update available", (255, 165, 0, 255))  # Orange indicator
+            # Add "Check for Update" option if update is available
+            icon.menu = pystray.Menu(
+                pystray.MenuItem("Open API Docs", open_docs),
+                pystray.MenuItem("Update your Topos", pull_latest_release),
+                pystray.MenuItem("Exit", on_exit)
+            )
+        else:
+            # Set the menu back to its default state without "Check for Update"
+            icon.menu = pystray.Menu(
+                pystray.MenuItem("Open API Docs", open_docs),
+                pystray.MenuItem("Exit", on_exit)
+            )
+            update_status(icon, "Service is running", (170, 255, 0, 255))  # Normal green status
+        time.sleep(60)  # Check every minute
+
+def pull_latest_release():
+    print("Pulling latest release...")
+    update_topos()
+
 def update_status(icon, text, color):
     icon.icon = create_image(color)
 
 def open_docs():
     webbrowser.open_new(DOCS_URL)
-
 
 def create_image(color):
     # Load the external image
