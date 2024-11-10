@@ -39,7 +39,7 @@ If nix is not installed:
     windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`
 2. Run Topos and all its dependencies:
    ```
-   nix run github:jonnyjohnson1/topos-cli/v0.2.5
+   nix run github:jonnyjohnson1/topos-cli/v0.2.6
    ```
    This will start all services including Topos, Postgres, Kafka, and Ollama.
 

@@ -47,6 +47,7 @@
                 }
             );
             toposPoetryEnv = pkgs.poetry2nix.mkPoetryEnv {
+            python = pkgs.python39; # set python version https://stackoverflow.com/questions/68625627/nix-flake-get-a-specific-python-version
             projectDir = self;
             preferWheels = true;
             inherit overrides;
