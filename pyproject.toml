@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "topos"
-version = "0.2.5"
+version = "0.2.6"
 description = "The official Python client for Topos."
 authors = ["Dialogues <info@dialogues.ai>"]
 license = "MIT"
@@ -38,6 +38,7 @@ pyjwt = "^2.8.0"
 python-multipart = "^0.0.9"
 pytest-asyncio = "^0.23.7"
 textblob = "^0.18.0.post0"
+numpy = "1.26.4"
 pystray = "0.19.5"
 aiokafka = "^0.11.0"
 supabase = "^2.6.0"
