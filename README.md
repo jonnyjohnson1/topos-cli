@@ -146,13 +146,13 @@ Insert this url into the field under settings-> "Api Endpoints" -> "Custom API"
 
 
 ## Future Setup
-nixOS
+**nixOS**  
 [ ] Theme the TUI [docs](https://f1bonacc1.github.io/process-compose/tui/)  
-[ ] Remotely connect to TUI [docs](https://f1bonacc1.github.io/process-compose/client/)
+[ ] Remotely connect to TUI [docs](https://f1bonacc1.github.io/process-compose/client/)  
 
-Postgres
-[ ] pgvector
-[ ] PostgresML
+**Postgres**  
+[ ] pgvector  
+[ ] PostgresML  
 
 
 ## Star History
