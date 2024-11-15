@@ -15,6 +15,6 @@ tell application "Terminal"
         echo 'Nix installation complete.'; \
     else \
         echo 'Nix is already installed.'; \
-    fi && nix run github:jonnyjohnson1/topos-cli/v0.2.6 --extra-experimental-features nix-command --extra-experimental-features flakes --show-trace"
+    fi && nix run github:jonnyjohnson1/topos-cli/v0.2.7 --extra-experimental-features nix-command --extra-experimental-features flakes --show-trace"
 end tell
 EOF

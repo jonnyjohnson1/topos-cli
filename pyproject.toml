@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "topos"
-version = "0.2.6"
+version = "0.2.7"
 description = "The official Python client for Topos."
 authors = ["Dialogues <info@dialogues.ai>"]
 license = "MIT"
