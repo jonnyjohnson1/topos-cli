@@ -85,8 +85,14 @@ nix develop .#poetry
 ## Install Tips
 
 ### POSTGRES 
-- If postgres is already running, running the bin fails, shut it down first.
+- If postgres is already running and running the bin fails, shut it down first.
 - Nix will manage postgres' start/stop function itself when you use it, but if you have started the database elsewhere, it won't be able to manage it, and will fail to start up.
+
+### NIXOS ERRORS  
+Updating Mac to Sequoia create an error:
+error: the user '_nixbld1' in the group 'nixbld' does not exist
+
+Fix it by running this code in your terminal `curl --proto '=https' --tlsv1.2 -sSf -L https://github.com/NixOS/nix/raw/master/scripts/sequoia-nixbld-user-migration.sh | bash -`
 
 
 ## Install Instructions
