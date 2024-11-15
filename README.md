@@ -145,7 +145,22 @@ Insert this url into the field under settings-> "Api Endpoints" -> "Custom API"
 ### Step 4b (ngrok): Set up web proxy
 
 
-
 ## Future Setup
+nixOS
 [ ] Theme the TUI [docs](https://f1bonacc1.github.io/process-compose/tui/)  
 [ ] Remotely connect to TUI [docs](https://f1bonacc1.github.io/process-compose/client/)
+
+Postgres
+[ ] pgvector
+[ ] PostgresML
+
+
+## Star History
+
+<a href="https://star-history.com/#jonnyjohnson1/topos-cli&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jonnyjohnson1/topos-cli&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=jonnyjohnson1/topos-cli&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=jonnyjohnson1/topos-cli&type=Date" />
+ </picture>
+</a>
