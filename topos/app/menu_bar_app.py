@@ -80,7 +80,7 @@ def evaluate_icon_status(icon):
     update_menu(icon)
     
 def check_update_available(icon):
-    """Periodically check for updates."""
+    """Periodically check for updates. Note: Github has rate limitations with its api"""
     while icon.visible:
         # Update the update check status
         status_checks["update_check"] = check_update()
