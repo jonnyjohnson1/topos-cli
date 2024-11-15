@@ -30,58 +30,98 @@ def start_web_app():
     api_thread.start()
     # Create and start the tray icon on the main thread
     create_tray_icon()
-    
+
+
+status_checks = {
+    "health_check": False,
+    "update_check": False,
+}
+
 def check_health(icon):
+    """Periodically check the service health."""
     certs = get_ssl_certificates()
     if not os.path.exists(certs['cert_path']):
         print(f"Certificate file not found: {certs['cert_path']}")
     if not os.path.exists(certs['key_path']):
         print(f"Key file not found: {certs['key_path']}")
-    
+
     while icon.visible:
         try:
-            with warnings.catch_warnings(): # cert=(certs['cert_path'], certs['key_path']) #for verification, but wasn't working
+            with warnings.catch_warnings():
                 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
                 response = requests.get(API_URL, verify=False)
-            if response.status_code == 200:
-                update_status(icon, "Service is running", (170, 255, 0, 255))
-            else:
-                update_status(icon, "Service is not running", "red")
+            # Update health check status based on response
+            status_checks["health_check"] = response.status_code == 200
         except requests.exceptions.RequestException as e:
-            update_status(icon, f"Error: {str(e)}", "red")
+            print(f"Health check error: {str(e)}")
+            status_checks["health_check"] = False
+        finally:
+            evaluate_icon_status(icon)
         time.sleep(5)
 
-def check_for_update():
-    # Check the latest release status from the GitHub API
-    # Returns True if an update is available, else False
-    update_is_available = check_for_update("jonnyjohnson1", "topos-cli")
-    return update_is_available
+def check_update():
+    """Check if an update is available."""
+    return check_for_update("jonnyjohnson1", "topos-cli")
 
+
+def evaluate_icon_status(icon):
+    """Evaluate and update the icon's status and menu based on checks."""
+    if not status_checks["health_check"]:
+        # If the service is not running
+        update_status(icon, "Service is not running", "red")
+    elif status_checks["update_check"]:
+        # If an update is available
+        update_status(icon, "Update available", (255, 165, 0, 255))  # Orange
+    else:
+        # If all checks pass
+        update_status(icon, "Service is running", (170, 255, 0, 255))  # Green
+    
+    # Update the menu based on the current status
+    update_menu(icon)
+    
 def check_update_available(icon):
+    """Periodically check for updates."""
     while icon.visible:
-        if check_for_update():
-            update_status(icon, "Update available", (255, 165, 0, 255))  # Orange indicator
-            # Add "Check for Update" option if update is available
-            icon.menu = pystray.Menu(
-                pystray.MenuItem("Open API Docs", open_docs),
-                pystray.MenuItem("Update your Topos", pull_latest_release),
-                pystray.MenuItem("Exit", on_exit)
-            )
-        else:
-            # Set the menu back to its default state without "Check for Update"
-            icon.menu = pystray.Menu(
-                pystray.MenuItem("Open API Docs", open_docs),
-                pystray.MenuItem("Exit", on_exit)
-            )
-            update_status(icon, "Service is running", (170, 255, 0, 255))  # Normal green status
-        time.sleep(60)  # Check every minute
+        # Update the update check status
+        status_checks["update_check"] = check_update()
+        evaluate_icon_status(icon)
+        time.sleep(60)
 
 def pull_latest_release():
     print("Pulling latest release...")
     update_topos()
 
+def update_icon(icon):
+    # Start a separate thread for checking updates
+    update_thread = threading.Thread(target=check_update_available, args=(icon,), daemon=True)
+    update_thread.start()
+    
+    # Start a separate thread for checking health
+    health_thread = threading.Thread(target=check_health, args=(icon,), daemon=True)
+    health_thread.start()
+    
 def update_status(icon, text, color):
     icon.icon = create_image(color)
+    # icon.notify(text)
+
+def update_menu(icon):
+    """Dynamically update the icon menu based on update status."""
+    if status_checks["update_check"]:
+        icon.menu = pystray.Menu(
+            pystray.MenuItem("Open API Docs", open_docs),
+            pystray.MenuItem("Update Topos", pull_latest_release),
+            pystray.MenuItem("Exit", on_exit)
+        )
+    else:
+        icon.menu = pystray.Menu(
+            pystray.MenuItem("Open API Docs", open_docs),
+            pystray.MenuItem("Exit", on_exit)
+        )
+
+# def update_status(icon, text, color):
+#     icon.icon = create_image(color)
+#     icon.notify(text)
+
 
 def open_docs():
     webbrowser.open_new(DOCS_URL)
@@ -115,7 +155,7 @@ def create_tray_icon():
     def on_setup(icon):
         icon.visible = True
         # Start health check in a separate thread
-        health_thread = threading.Thread(target=check_health, args=(icon,))
+        health_thread = threading.Thread(target=update_icon, args=(icon,))
         health_thread.daemon = True
         health_thread.start()
 

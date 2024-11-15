@@ -6,7 +6,6 @@ import logging
 # logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-
 repo_owner = "jonnyjohnson1"
 repo_name = "topos-cli"
 
@@ -16,7 +15,7 @@ def get_local_version_with_poetry():
     """
     result = subprocess.run(["poetry", "version", "--short"], capture_output=True, text=True, check=True)
     local_version = "v" + result.stdout.strip()
-    # logger.debug(f"Local version from Poetry: {local_version}")
+    logger.debug(f"Local version from Poetry: {local_version}")
     return local_version
 
 def get_latest_release_tag(repo_owner, repo_name):
@@ -28,7 +27,7 @@ def get_latest_release_tag(repo_owner, repo_name):
         response = requests.get(url)
         response.raise_for_status()
         latest_release = response.json()["tag_name"]
-        # logger.debug(f"Latest release from GitHub: {latest_release}")
+        logger.debug(f"Latest release from GitHub: {latest_release}")
         return latest_release
     except requests.ConnectionError:
         logger.debug("No internet connection. Cannot check for the latest release.")
