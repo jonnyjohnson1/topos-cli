@@ -28,3 +28,7 @@ stoppg:
     echo "Stopping any existing PostgreSQL server..."
     pg_ctl -D "$PGDATA" stop || echo "No existing server to stop."
     
+
+# TESTS
+test_update:
+    poetry run python -m topos.test.topos_updater.test_check_update

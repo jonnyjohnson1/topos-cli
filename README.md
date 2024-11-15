@@ -28,6 +28,8 @@ Tech: nixOS, ollama, postgres, FastAPI, huggingface-transformers
 ---
 
 ## (MacOS) Easy Install With .dmg
+[![Download](https://img.shields.io/badge/Download-File-blue?style=for-the-badge&logo=google-drive)](https://drive.google.com/file/d/1UpI8YOqqXnSQQbCo3oB28-w8nNlbhPHp/view?usp=sharing)
+
 *(Experimental)*: This is new, and should work on most MacOS machines!
 Simply double click the topos.dmg file, and drag the app into your Applications directory.
 You should be able to launch the Topos service anywhere from your machine.
@@ -39,7 +41,7 @@ If nix is not installed:
     windows: `sh <(curl -L https://nixos.org/nix/install) --daemon`
 2. Run Topos and all its dependencies:
    ```
-   nix run github:jonnyjohnson1/topos-cli/v0.2.7
+   nix run github:jonnyjohnson1/topos-cli/v0.2.8
    ```
    This will start all services including Topos, Postgres, Kafka, and Ollama.
 
