@@ -49,7 +49,7 @@ def start_topos_api():
     print("\033[92mINFO:\033[0m     API docs available at: \033[1mhttp://0.0.0.0:13341/docs\033[0m")
     uvicorn.run(app, host="0.0.0.0", port=13341)
 
-def start_kafka_api():
+def start_chat_server():
     from ..chat_api.api import start_messenger_server
     start_messenger_server()
 
@@ -60,7 +60,7 @@ process2 = None
 def start_local_api():
     global process1, process2
     process1 = Process(target=start_topos_api)
-    process2 = Process(target=start_kafka_api)
+    process2 = Process(target=start_chat_server)
     process1.start()
     process2.start()
     process1.join()
