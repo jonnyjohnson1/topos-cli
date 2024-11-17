@@ -15,7 +15,7 @@
   outputs = { self, nixpkgs, flake-parts, poetry2nix, process-compose-flake, services-flake }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } {
         imports = [ inputs.process-compose-flake.flakeModule ];
-        systems = [ "x86_64-linux" "aarch64-darwin" ];
+        systems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin"];
         perSystem = { self', pkgs, system, lib, ... }:
         let
             pkgs = import nixpkgs {
